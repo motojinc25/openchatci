@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build
+frontend/dist/
+backend/src/app/_frontend_dist/
+backend/dist/
+backend/LICENSE.md
+backend/src/*.egg-info/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Cache
+.ruff_cache/
+__pycache__/
+*.pyc
+
+# Sessions
+.sessions/
+
+# Uploads
+.uploads/
+
+# Archives
+.archived/

@@ -6,6 +6,7 @@ _emit_content() skips text_reasoning; this endpoint handles it directly.
 
 Session management is enabled via FileHistoryProvider (CTR-0014).
 Agent creation is delegated to agent_factory (CTR-0026, PRP-0016).
+Background Responses support via CTR-0045 (PRP-0025).
 """
 
 from collections.abc import AsyncGenerator
@@ -34,10 +35,12 @@ from ag_ui.core import (
 )
 from ag_ui.encoder import EventEncoder
 from agent_framework import Agent, AgentSession, Content
+from agent_framework.exceptions import ChatClientException
 from agent_framework_ag_ui._agent_run import _normalize_response_stream
 from agent_framework_ag_ui._message_adapters import normalize_agui_input_messages
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from openai import NotFoundError as OpenAINotFoundError
 from pydantic import AliasChoices, BaseModel, Field
 
 from app.core.config import settings
@@ -125,6 +128,7 @@ async def _stream_with_reasoning(
     reasoning_msg_id: str | None = None
     tool_call_id: str | None = None
     run_error = False
+    error_message = ""
 
     try:
         # Convert AG-UI messages to MAF Message objects
@@ -140,11 +144,45 @@ async def _stream_with_reasoning(
             "ag_ui_run_id": run_id,
         }
 
+        # Read background options from AG-UI state (CTR-0045, PRP-0025)
+        background = False
+        continuation_token = None
+        if request_body.state:
+            background = request_body.state.get("background", False)
+            continuation_token = request_body.state.get("continuation_token")
+
+        # Validate continuation_token format: MAF expects dict with "response_id"
+        if continuation_token and isinstance(continuation_token, str):
+            continuation_token = {"response_id": continuation_token}
+
+        run_options: dict[str, Any] = {}
+        if background:
+            run_options["background"] = True
+        if continuation_token:
+            run_options["continuation_token"] = continuation_token
+
         # Run agent with streaming
-        response_stream = agent.run(messages, stream=True, session=session)
+        response_stream = agent.run(
+            messages,
+            stream=True,
+            session=session,
+            options=run_options or None,
+        )
         stream = await _normalize_response_stream(response_stream)
 
         async for update in stream:
+            # Emit continuation_token if present (CTR-0045, PRP-0025)
+            if background:
+                update_ct = getattr(update, "continuation_token", None)
+                if update_ct is not None:
+                    yield encoder.encode(
+                        CustomEvent(
+                            type=EventType.CUSTOM,
+                            name="continuation_token",
+                            value=dict(update_ct) if hasattr(update_ct, "__iter__") else {"token": update_ct},
+                        )
+                    )
+
             contents = getattr(update, "contents", None) or []
             for content in contents:
                 content_type = getattr(content, "type", None)
@@ -267,19 +305,35 @@ async def _stream_with_reasoning(
 
                 elif content_type == "usage":
                     usage_details = getattr(content, "usage_details", None) or {}
+                    usage_value = dict(usage_details)
+                    usage_value["max_context_tokens"] = settings.model_max_context_tokens
                     yield encoder.encode(
                         CustomEvent(
                             type=EventType.CUSTOM,
                             name="usage",
-                            value=dict(usage_details),
+                            value=usage_value,
                         )
                     )
 
+    except (OpenAINotFoundError, ChatClientException, TypeError) as exc:
+        run_error = True
+        if continuation_token:
+            error_message = "Background response token not found or expired. Please resend your message."
+            logger.warning("Continuation token error for thread %s: %s", thread_id, exc)
+        else:
+            error_message = "An internal error occurred during agent execution."
+            logger.exception("AG-UI stream error")
+
     except Exception:
         run_error = True
-        logger.exception("AG-UI stream error")
+        if continuation_token:
+            error_message = "Background response token not found or expired. Please resend your message."
+            logger.warning("Continuation token error for thread %s", thread_id, exc_info=True)
+        else:
+            error_message = "An internal error occurred during agent execution."
+            logger.exception("AG-UI stream error")
 
-    # Always finalize open blocks — even after exceptions, so the frontend
+    # Always finalize open blocks -- even after exceptions, so the frontend
     # can stop thinking indicators and display any error.
     if reasoning_msg_id is not None:
         yield encoder.encode(
@@ -300,7 +354,7 @@ async def _stream_with_reasoning(
         yield encoder.encode(
             RunErrorEvent(
                 type=EventType.RUN_ERROR,
-                message="An internal error occurred during agent execution.",
+                message=error_message,
             )
         )
     yield encoder.encode(

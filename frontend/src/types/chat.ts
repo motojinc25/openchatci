@@ -21,6 +21,7 @@ export interface UsageInfo {
   input_token_count?: number
   output_token_count?: number
   total_token_count?: number
+  max_context_tokens?: number
 }
 
 export interface ChatMessage {

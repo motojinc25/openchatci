@@ -12,6 +12,7 @@ export function ChatPage() {
     threadId,
     sessions,
     initialMessages,
+    continuationToken,
     isSwitching,
     sidebarOpen,
     setSidebarOpen,
@@ -75,6 +76,7 @@ export function ChatPage() {
             key={threadId}
             threadId={threadId}
             initialMessages={initialMessages}
+            continuationToken={continuationToken}
             onStreamComplete={handleStreamComplete}
             onBranchFromMessage={handleBranch}
           />

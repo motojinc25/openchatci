@@ -5,6 +5,7 @@
 - Mounts session management API (CTR-0015)
 - Mounts image upload API (CTR-0022)
 - Mounts speech-to-text API (CTR-0021)
+- Mounts text-to-speech API (CTR-0039)
 - Serves frontend build artifacts (CTR-0005)
 - Loads configuration (CTR-0006)
 """
@@ -36,6 +37,9 @@ from app.session.router import router as session_router
 from app.stt.router import router as stt_router
 from app.stt.router import set_stt_provider
 from app.stt.whisper import AzureOpenAIWhisperProvider
+from app.tts.elevenlabs import ElevenLabsTTSProvider
+from app.tts.router import router as tts_router
+from app.tts.router import set_tts_provider
 from app.upload.router import router as upload_router
 
 # Suppress pydantic warnings from agent-framework-ag-ui's Field(validation_alias=...) usage
@@ -93,6 +97,17 @@ if settings.azure_openai_endpoint:
     set_stt_provider(AzureOpenAIWhisperProvider(stt_client, model=settings.whisper_deployment_name))
 app.include_router(stt_router)
 
+# Text-to-Speech API (CTR-0039)
+if settings.elevenlabs_api_key and settings.tts_voice_id:
+    set_tts_provider(
+        ElevenLabsTTSProvider(
+            api_key=settings.elevenlabs_api_key,
+            voice_id=settings.tts_voice_id,
+            model_id=settings.tts_model_id,
+        )
+    )
+app.include_router(tts_router)
+
 # Shared agent instance (CTR-0026)
 agent = create_agent()
 
@@ -101,6 +116,14 @@ register_agui_endpoints(app, agent=agent)
 
 # DevUI server (CTR-0025)
 launch_devui_if_enabled(agent)
+
+
+# Model info endpoint (CTR-0041, PRP-0023)
+@app.get("/api/model", tags=["Model"])
+async def get_model_info():
+    """Return model configuration for frontend context window display."""
+    return {"max_context_tokens": settings.model_max_context_tokens}
+
 
 # Static file serving (CTR-0005)
 # Dual-mode path resolution: explicit override -> dev layout -> bundled assets

@@ -22,6 +22,7 @@ interface UseChatOptions {
   threadId?: string
   initialMessages?: ChatMessage[]
   onStreamComplete?: () => void
+  bgEnabled?: boolean
 }
 
 /**
@@ -35,6 +36,7 @@ export function useChat(options?: UseChatOptions) {
   const abortRef = useRef<AbortController | null>(null)
   const threadIdRef = useRef(options?.threadId ?? crypto.randomUUID())
   const onStreamCompleteRef = useRef(options?.onStreamComplete)
+  const bgEnabledRef = useRef(options?.bgEnabled ?? false)
 
   useEffect(() => {
     if (options?.threadId) {
@@ -55,12 +57,16 @@ export function useChat(options?: UseChatOptions) {
     onStreamCompleteRef.current = options?.onStreamComplete
   }, [options?.onStreamComplete])
 
+  useEffect(() => {
+    bgEnabledRef.current = options?.bgEnabled ?? false
+  }, [options?.bgEnabled])
+
   const streamResponse = useCallback(
     async (
       userContent: string,
       currentMessages: ChatMessage[],
-      options?: { skipUserMessage?: boolean; images?: ImageRef[] },
-    ) => {
+      options?: { skipUserMessage?: boolean; images?: ImageRef[]; resumeToken?: Record<string, unknown> },
+    ): Promise<boolean> => {
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'user',
@@ -85,22 +91,42 @@ export function useChat(options?: UseChatOptions) {
       setIsLoading(true)
 
       abortRef.current = new AbortController()
+      let continuationTokenReceived = false
+      let streamSuccess = true
 
       try {
+        // Initialize session file before agent processing (PRP-0025)
+        // Creates the JSON file so the session ID is persisted early
+        if (!options?.skipUserMessage && !options?.resumeToken) {
+          await fetch(`/api/sessions/${threadIdRef.current}/init`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: userContent.slice(0, 100) }),
+          }).catch(() => {})
+        }
+
+        // Build AG-UI request state for background mode (CTR-0045, PRP-0025)
+        const aguiState: Record<string, unknown> = {}
+        if (bgEnabledRef.current) aguiState.background = true
+        if (options?.resumeToken) aguiState.continuation_token = options.resumeToken
+
         const response = await fetch('/ag-ui/', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             thread_id: threadIdRef.current,
             run_id: crypto.randomUUID(),
-            messages: [
-              {
-                id: userMessage.id,
-                role: 'user',
-                content: userContent,
-                ...(options?.images && options.images.length > 0 ? { images: options.images } : {}),
-              },
-            ],
+            messages: options?.resumeToken
+              ? []
+              : [
+                  {
+                    id: userMessage.id,
+                    role: 'user',
+                    content: userContent,
+                    ...(options?.images && options.images.length > 0 ? { images: options.images } : {}),
+                  },
+                ],
+            ...(Object.keys(aguiState).length > 0 ? { state: aguiState } : {}),
           }),
           signal: abortRef.current.signal,
         })
@@ -119,7 +145,6 @@ export function useChat(options?: UseChatOptions) {
         const completedToolCalls: { id: string; name: string; status: string; args?: string; result?: string }[] = []
         let currentReasoningContent = ''
         let completedUsage: UsageInfo | undefined
-
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
@@ -280,6 +305,7 @@ export function useChat(options?: UseChatOptions) {
                   break
                 }
                 case 'RUN_ERROR': {
+                  streamSuccess = false
                   const errorMsg = event.message ?? 'An error occurred'
                   setMessages((prev) =>
                     prev.map((msg) => (msg.id === assistantId ? { ...msg, content: `Error: ${errorMsg}` } : msg)),
@@ -293,6 +319,15 @@ export function useChat(options?: UseChatOptions) {
                       prev.map((msg) => (msg.id === assistantId ? { ...msg, usage: event.value as UsageInfo } : msg)),
                     )
                   }
+                  if (event.name === 'continuation_token' && event.value) {
+                    continuationTokenReceived = true
+                    // Save continuation_token immediately for mid-stream resilience (PRP-0025)
+                    fetch(`/api/sessions/${threadIdRef.current}/continuation-token`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ continuation_token: event.value }),
+                    }).catch(() => {})
+                  }
                   break
                 }
               }
@@ -301,21 +336,6 @@ export function useChat(options?: UseChatOptions) {
             }
           }
         }
-
-        // Close any reasoning blocks still in 'thinking' state (defensive:
-        // backend should send REASONING_MESSAGE_END, but stream errors may skip it)
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantId && msg.reasoningBlocks?.some((rb) => rb.status === 'thinking')
-              ? {
-                  ...msg,
-                  reasoningBlocks: msg.reasoningBlocks?.map((rb) =>
-                    rb.status === 'thinking' ? { ...rb, status: 'done' as const } : rb,
-                  ),
-                }
-              : msg,
-          ),
-        )
 
         // Save messages to session after stream completes
         if (assistantContent) {
@@ -345,15 +365,44 @@ export function useChat(options?: UseChatOptions) {
             .catch(() => {})
         }
       } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        const errorContent = error instanceof Error ? error.message : 'An unexpected error occurred'
-        setMessages((prev) =>
-          prev.map((msg) => (msg.id === assistantId ? { ...msg, content: `Error: ${errorContent}` } : msg)),
-        )
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          streamSuccess = false
+          const errorContent = error instanceof Error ? error.message : 'An unexpected error occurred'
+          setMessages((prev) =>
+            prev.map((msg) => (msg.id === assistantId ? { ...msg, content: `Error: ${errorContent}` } : msg)),
+          )
+        }
       } finally {
+        // Close any reasoning blocks still in 'thinking' state (defensive:
+        // handles abort/stop, stream errors, and missing REASONING_MESSAGE_END)
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId && msg.reasoningBlocks?.some((rb) => rb.status === 'thinking')
+              ? {
+                  ...msg,
+                  reasoningBlocks: msg.reasoningBlocks?.map((rb) =>
+                    rb.status === 'thinking' ? { ...rb, status: 'done' as const } : rb,
+                  ),
+                }
+              : msg,
+          ),
+        )
+
         setIsLoading(false)
         abortRef.current = null
+
+        // Always clear continuation_token on completion (CTR-0045, PRP-0025)
+        // Both success and error: token is no longer valid after stream ends
+        if (continuationTokenReceived || options?.resumeToken) {
+          fetch(`/api/sessions/${threadIdRef.current}/continuation-token`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ continuation_token: null }),
+          }).catch(() => {})
+        }
       }
+
+      return streamSuccess
     },
     [],
   )
@@ -463,6 +512,15 @@ export function useChat(options?: UseChatOptions) {
       .catch(() => {})
   }, [])
 
+  // Resume from continuation_token (CTR-0044, PRP-0025)
+  // Token clearing and result notification are handled in streamResponse's finally block
+  const resumeFromToken = useCallback(
+    async (token: Record<string, unknown>): Promise<boolean> => {
+      return streamResponse('', messagesRef.current, { skipUserMessage: true, resumeToken: token })
+    },
+    [streamResponse],
+  )
+
   const stopGeneration = useCallback(() => {
     abortRef.current?.abort()
   }, [])
@@ -481,5 +539,6 @@ export function useChat(options?: UseChatOptions) {
     regenerateAssistantMessage,
     editAssistantMessage,
     deleteMessage,
+    resumeFromToken,
   }
 }

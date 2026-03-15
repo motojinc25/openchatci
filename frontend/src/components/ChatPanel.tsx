@@ -1,11 +1,16 @@
 import { ImageIcon } from 'lucide-react'
-import { type DragEvent, useCallback, useRef, useState } from 'react'
+import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BackgroundResponsesToggle } from '@/components/BackgroundResponsesToggle'
 import { ChatInput } from '@/components/ChatInput'
 import { ChatMessageItem } from '@/components/ChatMessageItem'
+import { ContextWindowIndicator } from '@/components/ContextWindowIndicator'
 import { useChat } from '@/hooks/useChat'
 import { useImageAttachment } from '@/hooks/useImageAttachment'
+import { useTTS } from '@/hooks/useTTS'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, ImageRef } from '@/types/chat'
+
+const BG_STORAGE_KEY = 'openchatci-bg-enabled'
 
 interface ChatPanelProps {
   compact?: boolean
@@ -13,6 +18,7 @@ interface ChatPanelProps {
   className?: string
   threadId?: string
   initialMessages?: ChatMessage[]
+  continuationToken?: Record<string, unknown> | null
   onStreamComplete?: () => void
   onBranchFromMessage?: (messageIndex: number) => void
 }
@@ -42,9 +48,34 @@ export function ChatPanel({
   className,
   threadId,
   initialMessages,
+  continuationToken,
   onStreamComplete,
   onBranchFromMessage,
 }: ChatPanelProps) {
+  const [bgEnabled, setBgEnabled] = useState(() => localStorage.getItem(BG_STORAGE_KEY) === 'true')
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  const handleBgToggle = useCallback((enabled: boolean) => {
+    setBgEnabled(enabled)
+    localStorage.setItem(BG_STORAGE_KEY, String(enabled))
+  }, [])
+
+  // Auto-dismiss notification
+  useEffect(() => {
+    if (notification) {
+      const t = setTimeout(() => setNotification(null), 5000)
+      return () => clearTimeout(t)
+    }
+  }, [notification])
+
+  const handleResumeResult = useCallback((success: boolean) => {
+    if (success) {
+      setNotification({ type: 'success', message: 'Background response resumed' })
+    } else {
+      setNotification({ type: 'error', message: 'Background response expired. Please resend your message.' })
+    }
+  }, [])
+
   const {
     messages,
     isLoading,
@@ -54,18 +85,58 @@ export function ChatPanel({
     regenerateAssistantMessage,
     editAssistantMessage,
     deleteMessage,
+    resumeFromToken,
   } = useChat({
     threadId,
     initialMessages,
     onStreamComplete,
+    bgEnabled,
   })
+
+  // Auto-resume from continuation_token (page reload or sidebar switch).
+  // Uses ref for resume/notify to keep dependency array minimal.
+  // No "attempted" flag — React 18 StrictMode double-fires mount effects,
+  // so we rely on cleanup (clearTimeout) + re-set pattern instead.
+  const resumeRef = useRef({ resume: resumeFromToken, notify: handleResumeResult })
+  resumeRef.current.resume = resumeFromToken
+  resumeRef.current.notify = handleResumeResult
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ref keeps latest resume/notify; only continuationToken triggers
+  useEffect(() => {
+    if (!continuationToken) return
+    const token = continuationToken
+    const timer = setTimeout(async () => {
+      const success = await resumeRef.current.resume(token)
+      resumeRef.current.notify(success)
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [continuationToken])
 
   const { attachments, addFiles, removeAttachment, clearAttachments, getImageRefs, isUploading } = useImageAttachment()
 
+  const tts = useTTS()
+
   const [isDragging, setIsDragging] = useState(false)
   const dragCountRef = useRef(0)
+  const [maxContextTokens, setMaxContextTokens] = useState<number | undefined>()
+
+  useEffect(() => {
+    fetch('/api/model')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.max_context_tokens) setMaxContextTokens(data.max_context_tokens)
+      })
+      .catch(() => {})
+  }, [])
 
   const scrollRef = useAutoScroll(messages, isLoading)
+
+  const latestUsage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].usage) return messages[i].usage
+    }
+    return undefined
+  }, [messages])
 
   const handleSend = useCallback(
     (content: string, images?: ImageRef[]) => {
@@ -135,8 +206,10 @@ export function ChatPanel({
             <ChatMessageItem
               key={msg.id}
               message={msg}
+              messageIndex={i}
               compact={compact}
               isLoading={isLoading && i === messages.length - 1}
+              tts={tts}
               onEditUser={editUserMessage}
               onEditAssistant={editAssistantMessage}
               onRegenerateAssistant={regenerateAssistantMessage}
@@ -147,21 +220,44 @@ export function ChatPanel({
         </div>
       </div>
 
+      {notification && (
+        <div
+          className={cn(
+            'absolute right-3 top-3 z-30 rounded-md px-4 py-2 text-sm shadow-md',
+            notification.type === 'success'
+              ? 'bg-green-500/10 text-green-600 border border-green-500/20'
+              : 'bg-red-500/10 text-red-600 border border-red-500/20',
+          )}>
+          {notification.message}
+        </div>
+      )}
+
       {compact ? (
-        <ChatInput
-          onSend={handleSend}
-          onStop={stopGeneration}
-          isLoading={isLoading}
-          attachments={attachments}
-          onAddFiles={handleAddFiles}
-          onRemoveAttachment={removeAttachment}
-          getImageRefs={getImageRefs}
-          isUploading={isUploading}
-        />
+        <div>
+          <div className="flex items-center justify-end gap-1 px-4">
+            <BackgroundResponsesToggle enabled={bgEnabled} onToggle={handleBgToggle} />
+            <ContextWindowIndicator usage={latestUsage} maxContextTokens={maxContextTokens} />
+          </div>
+          <ChatInput
+            onSend={handleSend}
+            onStop={stopGeneration}
+            isLoading={isLoading}
+            attachments={attachments}
+            onAddFiles={handleAddFiles}
+            onRemoveAttachment={removeAttachment}
+            getImageRefs={getImageRefs}
+            isUploading={isUploading}
+            bgEnabled={bgEnabled}
+          />
+        </div>
       ) : (
         <div className="absolute inset-x-0 bottom-0 z-20">
           <div className="pointer-events-none bg-gradient-to-t from-background from-60% to-transparent pt-6" />
           <div className="relative bg-background">
+            <div className="mx-auto flex max-w-3xl items-center justify-end gap-1 px-4">
+              <BackgroundResponsesToggle enabled={bgEnabled} onToggle={handleBgToggle} />
+              <ContextWindowIndicator usage={latestUsage} maxContextTokens={maxContextTokens} />
+            </div>
             <ChatInput
               onSend={handleSend}
               onStop={stopGeneration}
@@ -171,6 +267,7 @@ export function ChatPanel({
               onRemoveAttachment={removeAttachment}
               getImageRefs={getImageRefs}
               isUploading={isUploading}
+              bgEnabled={bgEnabled}
             />
           </div>
         </div>

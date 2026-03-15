@@ -79,9 +79,11 @@ export function useSession() {
   })
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([])
+  const [continuationToken, setContinuationToken] = useState<Record<string, unknown> | null>(null)
   const [isSwitching, setIsSwitching] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const abortRef = useRef<(() => void) | null>(null)
+  const switchedRef = useRef(false)
 
   // Persist threadId to localStorage and sync URL
   useEffect(() => {
@@ -105,9 +107,14 @@ export function useSession() {
     refreshSessions()
   }, [refreshSessions])
 
-  // Load initial messages when URL has ?session= parameter
+  // Load initial messages when URL has ?session= parameter (page load only).
+  // switchSession already loads data before navigating, so skip the re-fetch.
   useEffect(() => {
     if (!sessionParam) return
+    if (switchedRef.current) {
+      switchedRef.current = false
+      return
+    }
     let cancelled = false
     async function load() {
       try {
@@ -115,7 +122,10 @@ export function useSession() {
         if (!res.ok || cancelled) return
         const data = await res.json()
         const msgs = convertMafMessages(data.messages ?? [])
-        if (!cancelled) setInitialMessages(msgs)
+        if (!cancelled) {
+          setInitialMessages(msgs)
+          setContinuationToken((data.continuation_token as Record<string, unknown>) ?? null)
+        }
       } catch {
         if (!cancelled) setInitialMessages([])
       }
@@ -135,6 +145,7 @@ export function useSession() {
     abortRef.current?.()
     const newId = crypto.randomUUID()
     setInitialMessages([])
+    setContinuationToken(null)
     setThreadId(newId)
     navigate('/chat', { replace: true })
     setSidebarOpen(false)
@@ -156,14 +167,17 @@ export function useSession() {
           const data = await res.json()
           const msgs = convertMafMessages(data.messages ?? [])
           setInitialMessages(msgs)
+          setContinuationToken((data.continuation_token as Record<string, unknown>) ?? null)
         } else {
           setInitialMessages([])
+          setContinuationToken(null)
         }
       } catch {
         setInitialMessages([])
       }
 
       setThreadId(targetThreadId)
+      switchedRef.current = true
       navigate(`/chat?session=${targetThreadId}`, { replace: true })
       setIsSwitching(false)
       setSidebarOpen(false)
@@ -267,6 +281,7 @@ export function useSession() {
     threadId,
     sessions,
     initialMessages,
+    continuationToken,
     isSwitching,
     sidebarOpen,
     setSidebarOpen,

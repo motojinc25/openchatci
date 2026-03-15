@@ -18,6 +18,7 @@ interface ChatInputProps {
   onRemoveAttachment?: (id: string) => void
   getImageRefs?: () => ImageRef[]
   isUploading?: boolean
+  bgEnabled?: boolean
 }
 
 export function ChatInput({
@@ -29,6 +30,7 @@ export function ChatInput({
   onRemoveAttachment,
   getImageRefs,
   isUploading,
+  bgEnabled,
 }: ChatInputProps) {
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -106,7 +108,9 @@ export function ChatInput({
           <div
             className={cn(
               'flex flex-col rounded-lg border bg-background',
-              'ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
+              bgEnabled
+                ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-background'
+                : 'ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
             )}>
             {onRemoveAttachment && <ImageThumbnails attachments={attachments} onRemove={onRemoveAttachment} />}
             <div className="flex items-end">

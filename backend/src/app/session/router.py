@@ -59,6 +59,39 @@ def _read_session_metadata(path: Path) -> dict[str, Any] | None:
         return None
 
 
+class InitSessionRequest(BaseModel):
+    title: str = ""
+
+
+@router.post("/{thread_id}/init")
+async def init_session(thread_id: str, body: InitSessionRequest) -> dict[str, Any]:
+    """Initialize an empty session file before agent processing starts.
+
+    Creates the session JSON so it appears in the sidebar immediately.
+    Idempotent: returns existing session if already present.
+    """
+    sessions_path = _sessions_dir()
+    sessions_path.mkdir(parents=True, exist_ok=True)
+    path = sessions_path / f"{thread_id}.json"
+
+    if path.is_file():
+        return {"status": "exists", "thread_id": thread_id}
+
+    now = datetime.now(UTC).isoformat()
+    data = {
+        "thread_id": thread_id,
+        "title": body.title[:100],
+        "created_at": now,
+        "updated_at": now,
+        "message_count": 0,
+        "image_count": 0,
+        "messages": [],
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info("Initialized session %s", thread_id)
+    return {"status": "created", "thread_id": thread_id}
+
+
 @router.get("")
 async def list_sessions() -> list[dict[str, Any]]:
     """List all sessions sorted by updated_at descending."""
@@ -434,6 +467,32 @@ async def archive_session(thread_id: str) -> dict[str, str]:
         return {"status": "archived", "thread_id": thread_id}
     except OSError as e:
         raise HTTPException(status_code=500, detail="Failed to archive session") from e
+
+
+class ContinuationTokenRequest(BaseModel):
+    continuation_token: dict[str, Any] | None = None
+
+
+@router.patch("/{thread_id}/continuation-token")
+async def update_continuation_token(thread_id: str, body: ContinuationTokenRequest) -> dict[str, Any]:
+    """Update continuation_token for background response resumption (CTR-0045, PRP-0025)."""
+    path = _sessions_dir() / f"{thread_id}.json"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        raise HTTPException(status_code=500, detail="Failed to read session") from e
+
+    data["continuation_token"] = body.continuation_token
+    data["updated_at"] = datetime.now(UTC).isoformat()
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info(
+        "Updated continuation_token for session %s: %s", thread_id, "set" if body.continuation_token else "cleared"
+    )
+
+    return {"status": "updated", "thread_id": thread_id}
 
 
 class PinRequest(BaseModel):

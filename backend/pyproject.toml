@@ -1,6 +1,6 @@
 [project]
 name = "openchatci"
-version = "0.21.1"
+version = "0.25.0"
 description = "Hawaii-built localhost-first AI agent platform powered by Microsoft Agent Framework."
 readme = "README.md"
 license = "Apache-2.0"
@@ -16,6 +16,7 @@ dependencies = [
     "agent-framework-devui>=1.0.0b0",
     "azure-identity>=1.23.0",
     "httpx>=0.28.0",
+    "elevenlabs>=2.39.0",
 ]
 
 [project.urls]

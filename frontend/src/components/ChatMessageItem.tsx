@@ -1,4 +1,17 @@
-import { Bot, Check, Copy, GitBranch, Pencil, RefreshCw, Trash2, User } from 'lucide-react'
+import {
+  Bot,
+  Check,
+  Copy,
+  Download,
+  GitBranch,
+  Loader2,
+  Pencil,
+  RefreshCw,
+  Square,
+  Trash2,
+  User,
+  Volume2,
+} from 'lucide-react'
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { ReasoningIndicator } from '@/components/ReasoningIndicator'
@@ -19,10 +32,22 @@ import { WeatherToolResults } from '@/components/WeatherCard'
 import { cn } from '@/lib/utils'
 import type { ChatMessage } from '@/types/chat'
 
+interface TTSControls {
+  play: (text: string, messageId: string) => Promise<void>
+  stop: () => void
+  download: (text: string, messageId: string, filename: string) => Promise<void>
+  ttsState: 'idle' | 'loading' | 'playing'
+  downloadState: 'idle' | 'downloading'
+  playingMessageId: string | null
+  downloadingMessageId: string | null
+}
+
 interface ChatMessageItemProps {
   message: ChatMessage
+  messageIndex?: number
   compact?: boolean
   isLoading?: boolean
+  tts?: TTSControls
   onEditUser?: (messageId: string, newContent: string) => void
   onEditAssistant?: (messageId: string, newContent: string) => void
   onRegenerateAssistant?: (messageId: string) => void
@@ -51,10 +76,73 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+function TTSPlayButton({ message, tts }: { message: ChatMessage; tts: TTSControls }) {
+  const isThisPlaying = tts.playingMessageId === message.id && tts.ttsState === 'playing'
+  const isThisLoading = tts.playingMessageId === message.id && tts.ttsState === 'loading'
+  const [hovered, setHovered] = useState(false)
+
+  const handleClick = useCallback(() => {
+    if (isThisPlaying) {
+      tts.stop()
+    } else {
+      tts.play(message.content, message.id)
+    }
+  }, [isThisPlaying, tts, message.content, message.id])
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-6 w-6 text-muted-foreground hover:text-foreground"
+      onClick={handleClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      aria-label={isThisPlaying ? 'Stop playback' : 'Play message'}>
+      {isThisLoading ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : isThisPlaying && hovered ? (
+        <Square className="h-3 w-3" />
+      ) : (
+        <Volume2 className="h-3 w-3" />
+      )}
+    </Button>
+  )
+}
+
+function TTSDownloadButton({
+  message,
+  messageIndex,
+  tts,
+}: {
+  message: ChatMessage
+  messageIndex: number
+  tts: TTSControls
+}) {
+  const isThisDownloading = tts.downloadingMessageId === message.id && tts.downloadState === 'downloading'
+
+  const handleClick = useCallback(() => {
+    tts.download(message.content, message.id, `message-${messageIndex}.mp3`)
+  }, [tts, message.content, message.id, messageIndex])
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-6 w-6 text-muted-foreground hover:text-foreground"
+      onClick={handleClick}
+      disabled={isThisDownloading}
+      aria-label="Download audio">
+      {isThisDownloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+    </Button>
+  )
+}
+
 export function ChatMessageItem({
   message,
+  messageIndex = 0,
   compact,
   isLoading,
+  tts,
   onEditUser,
   onEditAssistant,
   onRegenerateAssistant,
@@ -62,7 +150,8 @@ export function ChatMessageItem({
   onBranch,
 }: ChatMessageItemProps) {
   const isUser = message.role === 'user'
-  const isWaiting = !isUser && isLoading && !message.content
+  const hasTextContent = message.content != null && message.content.trim().length > 0
+  const isWaiting = !isUser && isLoading && !hasTextContent
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -177,6 +266,8 @@ export function ChatMessageItem({
         {!isLoading && !editing && message.content && (
           <div className="mt-0.5 flex gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100">
             <CopyButton text={message.content} />
+            {tts && <TTSPlayButton message={message} tts={tts} />}
+            {tts && <TTSDownloadButton message={message} messageIndex={messageIndex} tts={tts} />}
             {(isUser ? onEditUser : onEditAssistant) && (
               <Button
                 variant="ghost"

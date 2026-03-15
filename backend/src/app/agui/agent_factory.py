@@ -4,6 +4,7 @@ Extracts agent creation logic from endpoint.py so the same Agent instance
 can be used by both the AG-UI endpoint (CTR-0009) and DevUI server (CTR-0025).
 Weather tools (CTR-0027, PRP-0017) are registered as AI functions.
 Coding tools (CTR-0031, CTR-0032, PRP-0019) are conditionally registered.
+Agent Skills (CTR-0043, PRP-0024) are conditionally loaded via SkillsProvider.
 """
 
 import logging
@@ -17,6 +18,7 @@ from azure.identity import AzureCliCredential
 
 from app.core.config import settings
 from app.session.provider import FileHistoryProvider
+from app.skills.provider import create_skills_provider
 from app.weather.tools import get_coords_by_city, get_current_weather_by_coords, get_weather_next_week
 
 logger = logging.getLogger(__name__)
@@ -116,12 +118,18 @@ def create_agent() -> Agent:
             settings.coding_max_turns,
         )
 
+    # Context providers (CTR-0043, PRP-0024)
+    context_providers: list[Any] = [history_provider]
+    skills_provider = create_skills_provider()
+    if skills_provider:
+        context_providers.append(skills_provider)
+
     agent = Agent(
         name="OpenChatCi-Agent",
         instructions=instructions,
         client=client,
         tools=tools,
-        context_providers=[history_provider],
+        context_providers=context_providers,
         default_options=default_options or None,
     )
 

@@ -36,10 +36,14 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - LLM reasoning visualization with collapsible thinking blocks
 - Web search with inline citation links
 - Voice input via microphone with Whisper transcription
+- Text-to-Speech playback and download via ElevenLabs
 - Multimodal image analysis (file attachment, drag-and-drop, URL)
 - Weather tools with rich card widgets (Open-Meteo, no API key)
 - Coding tools (file read/write, shell execution, file search)
+- Agent Skills: portable domain knowledge packages with progressive disclosure
 - Session management: save, search, pin, archive, fork, rename
+- Background Responses: long-running agent timeout prevention with stream resumption
+- Context window consumption display with warning levels
 - Per-turn token usage display
 - Three layout scenarios: Chat, Popup, Sidebar
 
@@ -212,6 +216,67 @@ Enable AI-powered file operations and shell execution:
 CODING_ENABLED=true
 CODING_WORKSPACE_DIR=C:\path\to\workspace
 ```
+
+---
+
+### Text-to-Speech
+
+Enable on-demand TTS for messages via [ElevenLabs](https://elevenlabs.io/):
+
+```
+ELEVENLABS_API_KEY=your-api-key
+TTS_MODEL_ID=eleven_multilingual_v2
+TTS_VOICE_ID=your-voice-id
+```
+
+Speaker button plays audio, download button saves MP3 file. Audio is cached to avoid duplicate API calls.
+
+---
+
+### Agent Skills
+
+Extend the agent with domain knowledge packages ([Agent Skills specification](https://agentskills.io/)):
+
+```
+SKILLS_DIR=.skills
+```
+
+Place `SKILL.md` files in subdirectories. The agent discovers and loads skills on demand:
+
+```
+.skills/
+  my-skill/
+  ├── SKILL.md          # Required: instructions + metadata
+  ├── scripts/          # Optional: executable code
+  ├── references/       # Optional: documentation
+  └── assets/           # Optional: templates, resources
+```
+
+Skills use progressive disclosure to minimize context window consumption (~100 tokens per skill when idle).
+
+---
+
+### Background Responses
+
+For long-running agent operations (e.g., o3/o4-mini reasoning models), enable Background Responses to prevent timeouts:
+
+1. Click the **BG** toggle button (left of the context window indicator)
+2. ChatInput border turns blue when active
+3. Continuation tokens are auto-saved to session for page reload resumption
+
+No environment variable needed -- toggle on/off per session via the UI.
+
+---
+
+### Context Window
+
+Configure the model's context window size for the consumption progress bar:
+
+```
+MODEL_MAX_CONTEXT_TOKENS=1050000
+```
+
+The progress bar shows consumption rate above the chat input. Colors change at 80% (amber) and 95% (red).
 
 ---
 

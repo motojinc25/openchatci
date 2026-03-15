@@ -29,12 +29,23 @@ class Settings(BaseSettings):
     # Speech-to-Text
     whisper_deployment_name: str = "whisper-1"
 
+    # Model Context Window (CTR-0041, PRP-0023)
+    model_max_context_tokens: int = 128000
+
+    # Text-to-Speech (CTR-0039, PRP-0022)
+    elevenlabs_api_key: str = ""
+    tts_model_id: str = "eleven_multilingual_v2"
+    tts_voice_id: str = ""
+
     # Coding Tools (CTR-0031, CTR-0032, PRP-0019)
     coding_enabled: bool = False
     coding_workspace_dir: str = ""
     coding_bash_timeout: int = 30
     coding_max_output_chars: int = 100000
     coding_max_turns: int = 50
+
+    # Agent Skills (CTR-0042, PRP-0024)
+    skills_dir: str = ".skills"
 
     # DevUI (CTR-0024, PRP-0016)
     devui_enabled: bool = False

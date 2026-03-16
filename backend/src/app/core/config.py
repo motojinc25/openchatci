@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Agent Skills (CTR-0042, PRP-0024)
     skills_dir: str = ".skills"
 
+    # Prompt Templates (CTR-0046, PRP-0026)
+    templates_dir: str = ".templates"
+
     # DevUI (CTR-0024, PRP-0016)
     devui_enabled: bool = False
     devui_port: int = 8080

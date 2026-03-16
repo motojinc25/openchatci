@@ -1,11 +1,14 @@
 import { ImageIcon } from 'lucide-react'
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BackgroundResponsesToggle } from '@/components/BackgroundResponsesToggle'
-import { ChatInput } from '@/components/ChatInput'
+import { ChatInput, type ChatInputHandle } from '@/components/ChatInput'
 import { ChatMessageItem } from '@/components/ChatMessageItem'
 import { ContextWindowIndicator } from '@/components/ContextWindowIndicator'
+import { PromptTemplatesModal } from '@/components/templates/PromptTemplatesModal'
+import { SaveAsTemplateDialog } from '@/components/templates/SaveAsTemplateDialog'
 import { useChat } from '@/hooks/useChat'
 import { useImageAttachment } from '@/hooks/useImageAttachment'
+import { useTemplates } from '@/hooks/useTemplates'
 import { useTTS } from '@/hooks/useTTS'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, ImageRef } from '@/types/chat'
@@ -101,7 +104,6 @@ export function ChatPanel({
   resumeRef.current.resume = resumeFromToken
   resumeRef.current.notify = handleResumeResult
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: ref keeps latest resume/notify; only continuationToken triggers
   useEffect(() => {
     if (!continuationToken) return
     const token = continuationToken
@@ -115,6 +117,24 @@ export function ChatPanel({
   const { attachments, addFiles, removeAttachment, clearAttachments, getImageRefs, isUploading } = useImageAttachment()
 
   const tts = useTTS()
+
+  // Prompt Templates state (CTR-0048, PRP-0026)
+  const chatInputRef = useRef<ChatInputHandle>(null)
+  const [templatesModalOpen, setTemplatesModalOpen] = useState(false)
+  const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false)
+  const [saveAsBody, setSaveAsBody] = useState('')
+  const { createTemplate } = useTemplates()
+
+  const handleOpenTemplates = useCallback(() => setTemplatesModalOpen(true), [])
+
+  const handleInsertTemplate = useCallback((body: string) => {
+    chatInputRef.current?.insertText(body)
+  }, [])
+
+  const handleSaveAsTemplate = useCallback((content: string) => {
+    setSaveAsBody(content)
+    setSaveAsDialogOpen(true)
+  }, [])
 
   const [isDragging, setIsDragging] = useState(false)
   const dragCountRef = useRef(0)
@@ -215,6 +235,7 @@ export function ChatPanel({
               onRegenerateAssistant={regenerateAssistantMessage}
               onDelete={deleteMessage}
               onBranch={onBranchFromMessage ? () => onBranchFromMessage(i) : undefined}
+              onSaveAsTemplate={handleSaveAsTemplate}
             />
           ))}
         </div>
@@ -239,6 +260,7 @@ export function ChatPanel({
             <ContextWindowIndicator usage={latestUsage} maxContextTokens={maxContextTokens} />
           </div>
           <ChatInput
+            ref={chatInputRef}
             onSend={handleSend}
             onStop={stopGeneration}
             isLoading={isLoading}
@@ -248,6 +270,7 @@ export function ChatPanel({
             getImageRefs={getImageRefs}
             isUploading={isUploading}
             bgEnabled={bgEnabled}
+            onOpenTemplates={handleOpenTemplates}
           />
         </div>
       ) : (
@@ -259,6 +282,7 @@ export function ChatPanel({
               <ContextWindowIndicator usage={latestUsage} maxContextTokens={maxContextTokens} />
             </div>
             <ChatInput
+              ref={chatInputRef}
               onSend={handleSend}
               onStop={stopGeneration}
               isLoading={isLoading}
@@ -268,6 +292,7 @@ export function ChatPanel({
               getImageRefs={getImageRefs}
               isUploading={isUploading}
               bgEnabled={bgEnabled}
+              onOpenTemplates={handleOpenTemplates}
             />
           </div>
         </div>
@@ -281,6 +306,20 @@ export function ChatPanel({
           </div>
         </div>
       )}
+
+      <PromptTemplatesModal
+        open={templatesModalOpen}
+        onOpenChange={setTemplatesModalOpen}
+        onInsert={handleInsertTemplate}
+        onNotify={(message, type) => setNotification({ type, message })}
+      />
+      <SaveAsTemplateDialog
+        open={saveAsDialogOpen}
+        onOpenChange={setSaveAsDialogOpen}
+        initialBody={saveAsBody}
+        onSave={createTemplate}
+        onNotify={(message, type) => setNotification({ type, message })}
+      />
     </div>
   )
 }

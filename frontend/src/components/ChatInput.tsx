@@ -1,5 +1,5 @@
-import { Loader2, Mic, Paperclip, Plus, SendHorizonal, Square } from 'lucide-react'
-import { type KeyboardEvent, useCallback, useRef, useState } from 'react'
+import { FileText, Loader2, Mic, Paperclip, Plus, SendHorizonal, Square } from 'lucide-react'
+import { forwardRef, type KeyboardEvent, useCallback, useImperativeHandle, useRef, useState } from 'react'
 import { ImageThumbnails } from '@/components/ImageThumbnails'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -8,6 +8,10 @@ import type { ImageAttachment } from '@/hooks/useImageAttachment'
 import { useVoiceInput } from '@/hooks/useVoiceInput'
 import { cn } from '@/lib/utils'
 import type { ImageRef } from '@/types/chat'
+
+export interface ChatInputHandle {
+  insertText: (text: string) => void
+}
 
 interface ChatInputProps {
   onSend: (message: string, images?: ImageRef[]) => void
@@ -19,22 +23,41 @@ interface ChatInputProps {
   getImageRefs?: () => ImageRef[]
   isUploading?: boolean
   bgEnabled?: boolean
+  onOpenTemplates?: () => void
 }
 
-export function ChatInput({
-  onSend,
-  onStop,
-  isLoading,
-  attachments = [],
-  onAddFiles,
-  onRemoveAttachment,
-  getImageRefs,
-  isUploading,
-  bgEnabled,
-}: ChatInputProps) {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
+  {
+    onSend,
+    onStop,
+    isLoading,
+    attachments = [],
+    onAddFiles,
+    onRemoveAttachment,
+    getImageRefs,
+    isUploading,
+    bgEnabled,
+    onOpenTemplates,
+  },
+  ref,
+) {
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useImperativeHandle(ref, () => ({
+    insertText: (text: string) => {
+      setValue(text)
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current
+        if (textarea) {
+          textarea.style.height = 'auto'
+          textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
+          textarea.focus()
+        }
+      })
+    },
+  }))
 
   const handleTranscribed = useCallback((text: string) => {
     setValue((prev) => {
@@ -143,6 +166,12 @@ export function ChatInput({
                           <Paperclip className="mr-2 h-4 w-4" />
                           Attach image
                         </DropdownMenuItem>
+                        {onOpenTemplates && (
+                          <DropdownMenuItem onClick={onOpenTemplates}>
+                            <FileText className="mr-2 h-4 w-4" />
+                            Use template
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -208,4 +237,4 @@ export function ChatInput({
       </div>
     </div>
   )
-}
+})

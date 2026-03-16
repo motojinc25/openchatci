@@ -35,6 +35,16 @@ export interface ChatMessage {
   usage?: UsageInfo
 }
 
+export interface PromptTemplate {
+  id: string
+  name: string
+  description: string
+  category: string
+  body: string
+  created_at: string
+  updated_at: string
+}
+
 export interface SessionSummary {
   thread_id: string
   title: string

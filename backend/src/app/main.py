@@ -6,6 +6,7 @@
 - Mounts image upload API (CTR-0022)
 - Mounts speech-to-text API (CTR-0021)
 - Mounts text-to-speech API (CTR-0039)
+- Mounts prompt templates API (CTR-0047)
 - Serves frontend build artifacts (CTR-0005)
 - Loads configuration (CTR-0006)
 """
@@ -33,6 +34,7 @@ from app.agui.agent_factory import create_agent
 from app.agui.endpoint import register_agui_endpoints
 from app.core.config import settings
 from app.devui.launcher import launch_devui_if_enabled
+from app.prompt_templates.router import router as templates_router
 from app.session.router import router as session_router
 from app.stt.router import router as stt_router
 from app.stt.router import set_stt_provider
@@ -82,6 +84,9 @@ app.add_middleware(
 
 # Session management API (CTR-0015)
 app.include_router(session_router)
+
+# Prompt Templates API (CTR-0047)
+app.include_router(templates_router)
 
 # Image upload API (CTR-0022)
 app.include_router(upload_router)

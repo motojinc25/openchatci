@@ -40,6 +40,7 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - Multimodal image analysis (file attachment, drag-and-drop, URL)
 - Weather tools with rich card widgets (Open-Meteo, no API key)
 - Coding tools (file read/write, shell execution, file search)
+- Prompt Templates: save, manage, and insert reusable prompts from "+" menu and message actions
 - Agent Skills: portable domain knowledge packages with progressive disclosure
 - Session management: save, search, pin, archive, fork, rename
 - Background Responses: long-running agent timeout prevention with stream resumption
@@ -207,6 +208,23 @@ openchatci --version          Show version
 ---
 
 ## Optional Features
+
+### Prompt Templates
+
+Save and reuse prompt templates from the chat interface:
+
+```
+TEMPLATES_DIR=.templates
+```
+
+- Click **+** button > **Use template** to open the management modal
+- Create, edit, delete templates with name, category, and body
+- **Insert to Chat** pastes the template into the input (editable before send)
+- Click the **FileText** icon on any user message to save it as a template
+
+Templates are stored as individual JSON files in the configured directory.
+
+---
 
 ### Coding Tools
 

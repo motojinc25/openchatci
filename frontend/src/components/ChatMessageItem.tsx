@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   Download,
+  FileText,
   GitBranch,
   Loader2,
   Pencil,
@@ -53,6 +54,7 @@ interface ChatMessageItemProps {
   onRegenerateAssistant?: (messageId: string) => void
   onDelete?: (messageId: string) => void
   onBranch?: () => void
+  onSaveAsTemplate?: (content: string) => void
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -148,6 +150,7 @@ export function ChatMessageItem({
   onRegenerateAssistant,
   onDelete,
   onBranch,
+  onSaveAsTemplate,
 }: ChatMessageItemProps) {
   const isUser = message.role === 'user'
   const hasTextContent = message.content != null && message.content.trim().length > 0
@@ -276,6 +279,16 @@ export function ChatMessageItem({
                 onClick={handleStartEdit}
                 aria-label="Edit message">
                 <Pencil className="h-3 w-3" />
+              </Button>
+            )}
+            {isUser && onSaveAsTemplate && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                onClick={() => onSaveAsTemplate(message.content)}
+                aria-label="Save as template">
+                <FileText className="h-3 w-3" />
               </Button>
             )}
             {!isUser && onRegenerateAssistant && (

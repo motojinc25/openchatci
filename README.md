@@ -26,6 +26,14 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 <p align="center">
 <sub>Weather Tools · Mermaid Diagrams · Image Analysis</sub>
 </p>
+<p align="center">
+<img src="assets/images/screenshot4.png">
+<img src="assets/images/screenshot5.png">
+<img src="assets/images/screenshot6.png">
+</p>
+<p align="center">
+<sub>DevUI · Search Session · Image generation</sub>
+</p>
 
 ---
 
@@ -38,6 +46,7 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - Voice input via microphone with Whisper transcription
 - Text-to-Speech playback and download via ElevenLabs
 - Multimodal image analysis (file attachment, drag-and-drop, URL)
+- Image generation, editing, and Canvas mask editor via Azure OpenAI gpt-image-1.5
 - Weather tools with rich card widgets (Open-Meteo, no API key)
 - Coding tools (file read/write, shell execution, file search)
 - Prompt Templates: save, manage, and insert reusable prompts from "+" menu and message actions
@@ -223,6 +232,26 @@ TEMPLATES_DIR=.templates
 - Click the **FileText** icon on any user message to save it as a template
 
 Templates are stored as individual JSON files in the configured directory.
+
+---
+
+### Image Generation
+
+Generate and edit images via Azure OpenAI gpt-image-1.5:
+
+```
+IMAGE_DEPLOYMENT_NAME=gpt-image-1.5
+```
+
+- **generate_image**: create images from text prompts with configurable size, quality, format, background, and count (1-4)
+- **edit_image**: modify existing session images using text prompts (prompt-based)
+- **Canvas Mask Editor**: click the **Edit** button on any generated image to open a full-screen mask editor
+  - Draw over areas to edit with brush tools (S/M/L), eraser, undo/redo
+  - Enter a prompt and click Generate -- the agent edits only the masked region
+- Generated images displayed inline in chat with click-to-open full-size
+- Images stored in session upload directory and persist across reloads
+
+The agent automatically uses these tools when users request image creation or editing. No opt-in flag needed -- the feature activates when `IMAGE_DEPLOYMENT_NAME` is set.
 
 ---
 

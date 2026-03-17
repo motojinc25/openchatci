@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     tts_model_id: str = "eleven_multilingual_v2"
     tts_voice_id: str = ""
 
+    # Image Generation (CTR-0049, CTR-0050, PRP-0027)
+    image_deployment_name: str = ""
+
     # Coding Tools (CTR-0031, CTR-0032, PRP-0019)
     coding_enabled: bool = False
     coding_workspace_dir: str = ""

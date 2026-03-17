@@ -4,6 +4,7 @@ import { BackgroundResponsesToggle } from '@/components/BackgroundResponsesToggl
 import { ChatInput, type ChatInputHandle } from '@/components/ChatInput'
 import { ChatMessageItem } from '@/components/ChatMessageItem'
 import { ContextWindowIndicator } from '@/components/ContextWindowIndicator'
+import { MaskEditorDialog } from '@/components/MaskEditorDialog'
 import { PromptTemplatesModal } from '@/components/templates/PromptTemplatesModal'
 import { SaveAsTemplateDialog } from '@/components/templates/SaveAsTemplateDialog'
 import { useChat } from '@/hooks/useChat'
@@ -136,6 +137,50 @@ export function ChatPanel({
     setSaveAsDialogOpen(true)
   }, [])
 
+  // Mask Editor state (CTR-0052, PRP-0028)
+  const [maskEditorState, setMaskEditorState] = useState<{ imageUrl: string } | null>(null)
+
+  const handleMaskEdit = useCallback((imageUrl: string) => {
+    setMaskEditorState({ imageUrl })
+  }, [])
+
+  const handleMaskGenerate = useCallback(
+    async (compositedBlob: Blob, previewBlob: Blob, prompt: string) => {
+      setMaskEditorState(null)
+      if (!threadId) return
+      try {
+        // Upload mask preview image (for user message display)
+        const previewForm = new FormData()
+        previewForm.append('file', new File([previewBlob], 'mask_preview.png', { type: 'image/png' }))
+        const previewRes = await fetch(`/api/upload/${threadId}`, { method: 'POST', body: previewForm })
+        const previewData = previewRes.ok ? await previewRes.json() : null
+
+        // Upload composited image (source for edit_image tool -- transparent areas = edit regions)
+        const compositedForm = new FormData()
+        compositedForm.append(
+          'file',
+          new File([compositedBlob], `mask_source_${Date.now()}.png`, { type: 'image/png' }),
+        )
+        const compositedRes = await fetch(`/api/upload/${threadId}`, { method: 'POST', body: compositedForm })
+        const compositedData = compositedRes.ok ? await compositedRes.json() : null
+
+        if (!compositedData?.filename) {
+          setNotification({ type: 'error', message: 'Failed to upload source image' })
+          return
+        }
+
+        // Send user message: preview image + instruction for agent to call edit_image
+        const images: ImageRef[] = []
+        if (previewData?.uri) images.push({ uri: previewData.uri, media_type: 'image/png' })
+
+        sendMessage(`Edit the masked areas of the image "${compositedData.filename}": ${prompt}`, images)
+      } catch (err) {
+        setNotification({ type: 'error', message: err instanceof Error ? err.message : 'Failed to start mask edit' })
+      }
+    },
+    [threadId, sendMessage],
+  )
+
   const [isDragging, setIsDragging] = useState(false)
   const dragCountRef = useRef(0)
   const [maxContextTokens, setMaxContextTokens] = useState<number | undefined>()
@@ -236,6 +281,7 @@ export function ChatPanel({
               onDelete={deleteMessage}
               onBranch={onBranchFromMessage ? () => onBranchFromMessage(i) : undefined}
               onSaveAsTemplate={handleSaveAsTemplate}
+              onMaskEdit={handleMaskEdit}
             />
           ))}
         </div>
@@ -320,6 +366,14 @@ export function ChatPanel({
         onSave={createTemplate}
         onNotify={(message, type) => setNotification({ type, message })}
       />
+      {maskEditorState && (
+        <MaskEditorDialog
+          open={!!maskEditorState}
+          onOpenChange={(open) => !open && setMaskEditorState(null)}
+          imageUrl={maskEditorState.imageUrl}
+          onGenerate={handleMaskGenerate}
+        />
+      )}
     </div>
   )
 }

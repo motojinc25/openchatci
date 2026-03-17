@@ -44,6 +44,7 @@ from openai import NotFoundError as OpenAINotFoundError
 from pydantic import AliasChoices, BaseModel, Field
 
 from app.core.config import settings
+from app.image_gen.tools import current_thread_id as _image_gen_thread_id
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,9 @@ async def _stream_with_reasoning(
             run_options["background"] = True
         if continuation_token:
             run_options["continuation_token"] = continuation_token
+
+        # Set thread_id for image generation tools (CTR-0050, PRP-0027)
+        _image_gen_thread_id.set(thread_id)
 
         # Run agent with streaming
         response_stream = agent.run(

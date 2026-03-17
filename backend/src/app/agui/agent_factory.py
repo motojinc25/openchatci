@@ -118,6 +118,19 @@ def create_agent() -> Agent:
             settings.coding_max_turns,
         )
 
+    # Conditionally register image generation tools (CTR-0050, PRP-0027)
+    if settings.image_deployment_name:
+        from app.image_gen.tools import edit_image, generate_image
+
+        tools.extend([generate_image, edit_image])
+        instructions += (
+            " You can generate images from text descriptions using generate_image. "
+            "You can also edit existing images using edit_image by providing the filename "
+            "of an uploaded or previously generated image. "
+            "After generating or editing an image, describe what was created."
+        )
+        logger.info("Image generation tools enabled (deployment=%s)", settings.image_deployment_name)
+
     # Context providers (CTR-0043, PRP-0024)
     context_providers: list[Any] = [history_provider]
     skills_provider = create_skills_provider()

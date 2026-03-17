@@ -27,13 +27,27 @@ def _sessions_dir() -> Path:
     return Path(settings.sessions_dir)
 
 
+_IMAGE_GEN_TOOLS = frozenset({"generate_image", "edit_image"})
+
+
 def _count_images(messages: list[dict[str, Any]]) -> int:
-    """Count image_url content entries across all messages."""
+    """Count image_url content entries and generated images across all messages."""
     count = 0
     for msg in messages:
         for c in msg.get("contents", []):
             if isinstance(c, dict) and c.get("type") == "image_url":
                 count += 1
+        for tc in msg.get("tool_calls", []):
+            if tc.get("name") not in _IMAGE_GEN_TOOLS:
+                continue
+            result = tc.get("result", "")
+            if not isinstance(result, str):
+                continue
+            try:
+                parsed = json.loads(result)
+                count += len(parsed.get("images", []))
+            except (json.JSONDecodeError, TypeError):
+                pass
     return count
 
 

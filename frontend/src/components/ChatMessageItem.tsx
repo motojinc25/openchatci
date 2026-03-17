@@ -14,6 +14,7 @@ import {
   Volume2,
 } from 'lucide-react'
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { ImageGenerationResults } from '@/components/ImageGenerationResult'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { ReasoningIndicator } from '@/components/ReasoningIndicator'
 import { ToolCallIndicator } from '@/components/ToolCallIndicator'
@@ -55,6 +56,7 @@ interface ChatMessageItemProps {
   onDelete?: (messageId: string) => void
   onBranch?: () => void
   onSaveAsTemplate?: (content: string) => void
+  onMaskEdit?: (imageUrl: string) => void
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -151,6 +153,7 @@ export function ChatMessageItem({
   onDelete,
   onBranch,
   onSaveAsTemplate,
+  onMaskEdit,
 }: ChatMessageItemProps) {
   const isUser = message.role === 'user'
   const hasTextContent = message.content != null && message.content.trim().length > 0
@@ -239,14 +242,22 @@ export function ChatMessageItem({
           <div>
             {message.images && message.images.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-2">
-                {message.images.map((img) => (
-                  <img
-                    key={img.uri}
-                    src={img.uri}
-                    alt="Attached"
-                    className="max-h-48 max-w-xs rounded-lg border object-contain"
-                  />
-                ))}
+                {message.images.map((img) => {
+                  const isGenerated = img.uri.includes('/generated_')
+                  return (
+                    <a key={img.uri} href={img.uri} target="_blank" rel="noopener noreferrer" className="block">
+                      <img
+                        src={img.uri}
+                        alt="Attached"
+                        className={
+                          isGenerated
+                            ? 'max-w-full rounded-lg border border-border/50 shadow-sm transition-shadow hover:shadow-md'
+                            : 'max-h-48 max-w-xs rounded-lg border object-contain'
+                        }
+                      />
+                    </a>
+                  )
+                })}
               </div>
             )}
             <div className="whitespace-pre-wrap">{message.content}</div>
@@ -258,6 +269,9 @@ export function ChatMessageItem({
             )}
             <ToolCallIndicator toolCalls={message.toolCalls} isWaiting={isWaiting} />
             {message.toolCalls && message.toolCalls.length > 0 && <WeatherToolResults toolCalls={message.toolCalls} />}
+            {message.toolCalls && message.toolCalls.length > 0 && (
+              <ImageGenerationResults toolCalls={message.toolCalls} onMaskEdit={onMaskEdit} />
+            )}
             {message.content ? (
               <MarkdownRenderer content={message.content} />
             ) : (

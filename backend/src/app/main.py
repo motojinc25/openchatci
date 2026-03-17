@@ -34,6 +34,7 @@ from app.agui.agent_factory import create_agent
 from app.agui.endpoint import register_agui_endpoints
 from app.core.config import settings
 from app.devui.launcher import launch_devui_if_enabled
+from app.image_gen.router import router as image_edit_router
 from app.prompt_templates.router import router as templates_router
 from app.session.router import router as session_router
 from app.stt.router import router as stt_router
@@ -90,6 +91,9 @@ app.include_router(templates_router)
 
 # Image upload API (CTR-0022)
 app.include_router(upload_router)
+
+# Mask-based image editing API (CTR-0053, PRP-0028)
+app.include_router(image_edit_router)
 
 # Speech-to-Text API (CTR-0021)
 if settings.azure_openai_endpoint:

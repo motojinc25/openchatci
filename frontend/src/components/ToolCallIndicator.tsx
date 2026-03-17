@@ -6,8 +6,10 @@ import {
   FilePen,
   FolderSearch,
   Globe,
+  ImagePlus,
   Loader2,
   MapPin,
+  Pencil,
   Search,
   Terminal,
   Wrench,
@@ -35,6 +37,8 @@ const toolDisplayNames: Record<string, { label: string; doneLabel: string; icon:
   bash_execute: { label: 'Executing command...', doneLabel: 'Executed command', icon: Terminal },
   file_glob: { label: 'Searching files...', doneLabel: 'Searched files', icon: FolderSearch },
   file_grep: { label: 'Searching content...', doneLabel: 'Searched content', icon: Search },
+  generate_image: { label: 'Generating image...', doneLabel: 'Generated image', icon: ImagePlus },
+  edit_image: { label: 'Editing image...', doneLabel: 'Edited image', icon: Pencil },
 }
 
 function formatJson(raw: string): string {

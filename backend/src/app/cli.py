@@ -70,17 +70,31 @@ def _run_serve(args: argparse.Namespace) -> None:
 
     host = args.host or settings.app_host
     port = args.port or settings.app_port
+    ssl_certfile = args.ssl_certfile or settings.app_ssl_certfile or None
+    ssl_keyfile = args.ssl_keyfile or settings.app_ssl_keyfile or None
 
+    if bool(ssl_certfile) != bool(ssl_keyfile):
+        print("ERROR: --ssl-certfile and --ssl-keyfile must both be provided.")
+        sys.exit(1)
+
+    protocol = "https" if ssl_certfile else "http"
     print(f"OpenChatCi v{_get_version()}")
-    print(f"Starting server on http://{host}:{port}")
+    print(f"Starting server on {protocol}://{host}:{port}")
+    if ssl_certfile:
+        print(f"TLS certificate: {ssl_certfile}")
+        print(f"TLS private key: {ssl_keyfile}")
     print()
 
-    uvicorn.run(
-        "app.main:app",
-        host=host,
-        port=port,
-        log_config=None,
-    )
+    uvicorn_kwargs: dict = {
+        "host": host,
+        "port": port,
+        "log_config": None,
+    }
+    if ssl_certfile and ssl_keyfile:
+        uvicorn_kwargs["ssl_certfile"] = ssl_certfile
+        uvicorn_kwargs["ssl_keyfile"] = ssl_keyfile
+
+    uvicorn.run("app.main:app", **uvicorn_kwargs)
 
 
 def _run_init(args: argparse.Namespace) -> None:
@@ -128,6 +142,22 @@ def main() -> None:
         "--skip-auth-check",
         action="store_true",
         help="Skip Azure CLI login check",
+    )
+    parser.add_argument(
+        "--ssl-certfile",
+        metavar="PATH",
+        default=None,
+        help="Path to SSL certificate file (PEM format). "
+        "Must be used together with --ssl-keyfile. "
+        "Enables HTTPS mode for Secure Context on LAN.",
+    )
+    parser.add_argument(
+        "--ssl-keyfile",
+        metavar="PATH",
+        default=None,
+        help="Path to SSL private key file (PEM format). "
+        "Must be used together with --ssl-certfile. "
+        "Enables HTTPS mode for Secure Context on LAN.",
     )
 
     # init subcommand

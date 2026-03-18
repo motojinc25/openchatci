@@ -38,3 +38,6 @@ __pycache__/
 
 # Prompt Templates
 .templates/
+
+# TLS Certificates
+.certs/

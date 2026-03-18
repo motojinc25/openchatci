@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +10,10 @@ class Settings(BaseSettings):
     app_debug: bool = True
     frontend_dist: str = "../frontend/dist"
     cors_allowed_origins: str = "http://localhost:5173"
+
+    # TLS / HTTPS (CTR-0054, PRP-0029)
+    app_ssl_certfile: str = ""
+    app_ssl_keyfile: str = ""
 
     # Azure OpenAI
     azure_openai_endpoint: str = ""
@@ -60,6 +65,26 @@ class Settings(BaseSettings):
     devui_auth_token: str = ""
     devui_tracing: bool = False
     devui_mode: str = "developer"
+
+    @model_validator(mode="after")
+    def _validate_ssl_pair(self) -> "Settings":
+        has_cert = bool(self.app_ssl_certfile)
+        has_key = bool(self.app_ssl_keyfile)
+        if has_cert != has_key:
+            msg = "APP_SSL_CERTFILE and APP_SSL_KEYFILE must both be provided or both omitted."
+            raise ValueError(msg)
+        if has_cert and has_key:
+            from pathlib import Path
+
+            cert_path = Path(self.app_ssl_certfile)
+            key_path = Path(self.app_ssl_keyfile)
+            if not cert_path.exists():
+                msg = f"SSL certificate file not found: {cert_path}"
+                raise ValueError(msg)
+            if not key_path.exists():
+                msg = f"SSL key file not found: {key_path}"
+                raise ValueError(msg)
+        return self
 
 
 settings = Settings()

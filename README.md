@@ -55,6 +55,7 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - Background Responses: long-running agent timeout prevention with stream resumption
 - Context window consumption display with warning levels
 - Per-turn token usage display
+- HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
 - Three layout scenarios: Chat, Popup, Sidebar
 
 ---
@@ -190,13 +191,15 @@ The backend serves both frontend build artifacts and the API at [http://localhos
 ## CLI Usage
 
 ```
-openchatci                    Start the server
-openchatci init               Generate .env from template
-openchatci init --force       Overwrite existing .env
-openchatci --host 0.0.0.0     Bind to all interfaces
-openchatci --port 9000        Use custom port
-openchatci --skip-auth-check  Skip Azure CLI login check
-openchatci --version          Show version
+openchatci                                Start the server
+openchatci init                           Generate .env from template
+openchatci init --force                   Overwrite existing .env
+openchatci --host 0.0.0.0                 Bind to all interfaces
+openchatci --port 9000                    Use custom port
+openchatci --skip-auth-check              Skip Azure CLI login check
+openchatci --ssl-certfile cert.pem \
+           --ssl-keyfile key.pem          Enable HTTPS (LAN access)
+openchatci --version                      Show version
 ```
 
 ---
@@ -312,6 +315,31 @@ For long-running agent operations (e.g., o3/o4-mini reasoning models), enable Ba
 3. Continuation tokens are auto-saved to session for page reload resumption
 
 No environment variable needed -- toggle on/off per session via the UI.
+
+---
+
+### HTTPS / LAN Access
+
+Access OpenChatCi from other devices on your home network (phones, tablets, other PCs).
+HTTPS enables browser Secure Context for voice input and clipboard on non-localhost origins.
+
+```
+APP_HOST=0.0.0.0
+APP_SSL_CERTFILE=.certs/cert.pem
+APP_SSL_KEYFILE=.certs/key.pem
+```
+
+Setup:
+
+1. Install [mkcert](https://github.com/FiloSottile/mkcert) and run `mkcert -install`
+2. Issue a certificate: `mkcert -cert-file .certs/cert.pem -key-file .certs/key.pem <your-ip> localhost 127.0.0.1`
+3. Set the env vars above in `.env`
+4. Allow ports through firewall (8000 for production, 5173 for dev mode)
+5. Install the CA certificate (`rootCA.pem`) on each client device
+
+Access from LAN: `https://<your-ip>:8000`
+
+When SSL is not configured, the server runs in HTTP mode as usual (no breaking change).
 
 ---
 

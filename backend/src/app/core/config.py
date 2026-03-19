@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # Prompt Templates (CTR-0046, PRP-0026)
     templates_dir: str = ".templates"
 
+    # MCP Integration (CTR-0059, PRP-0031)
+    mcp_config_file: str = ""
+
+    # OpenAI Compatible API (CTR-0056, PRP-0030)
+    api_key: str = ""
+
     # DevUI (CTR-0024, PRP-0016)
     devui_enabled: bool = False
     devui_port: int = 8080

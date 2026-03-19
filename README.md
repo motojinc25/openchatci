@@ -51,10 +51,12 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - Coding tools (file read/write, shell execution, file search)
 - Prompt Templates: save, manage, and insert reusable prompts from "+" menu and message actions
 - Agent Skills: portable domain knowledge packages with progressive disclosure
+- MCP Integration: connect external tools via Model Context Protocol (Claude Desktop-compatible config)
 - Session management: save, search, pin, archive, fork, rename
 - Background Responses: long-running agent timeout prevention with stream resumption
 - Context window consumption display with warning levels
 - Per-turn token usage display
+- OpenAI-compatible API: expose agent as `/v1/responses` endpoint for external apps via OpenAI SDK
 - HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
 - Three layout scenarios: Chat, Popup, Sidebar
 
@@ -306,6 +308,40 @@ Skills use progressive disclosure to minimize context window consumption (~100 t
 
 ---
 
+### MCP Integration
+
+Connect external tools and services via [Model Context Protocol](https://modelcontextprotocol.io/) using the Claude Desktop-compatible configuration format:
+
+```
+MCP_CONFIG_FILE=mcp_servers.json
+```
+
+Create a `mcp_servers.json` file (see `backend/mcp_servers.sample.json`):
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/workspace"]
+    },
+    "remote-api": {
+      "url": "https://api.example.com/mcp",
+      "headers": { "Authorization": "Bearer token" }
+    }
+  }
+}
+```
+
+- **stdio** servers (with `command`): OpenChatCi spawns the process and communicates via stdin/stdout
+- **HTTP/SSE** servers (with `url`): OpenChatCi connects to a running remote server
+- MCP tools appear alongside built-in tools (Weather, Coding, Image Generation)
+- Tool calls display with a **Plug** icon indicator in the chat
+- Server lifecycle managed automatically (startup/shutdown with zombie process prevention)
+- Reuse your existing Claude Desktop / Claude Code / Cursor MCP configurations
+
+---
+
 ### Background Responses
 
 For long-running agent operations (e.g., o3/o4-mini reasoning models), enable Background Responses to prevent timeouts:
@@ -315,6 +351,49 @@ For long-running agent operations (e.g., o3/o4-mini reasoning models), enable Ba
 3. Continuation tokens are auto-saved to session for page reload resumption
 
 No environment variable needed -- toggle on/off per session via the UI.
+
+---
+
+### OpenAI Compatible API
+
+Expose the agent as an OpenAI-compatible endpoint for external applications:
+
+```
+API_KEY=sk-openchatci-your-secret-key-here
+```
+
+Any app using the [OpenAI SDK](https://github.com/openai/openai-python) can consume the agent by pointing `base_url`:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="sk-openchatci-your-secret-key-here",
+)
+
+# Non-streaming
+response = client.responses.create(
+    model="openchatci",
+    input="What is the weather in Tokyo?",
+)
+
+# Streaming
+stream = client.responses.create(
+    model="openchatci",
+    input="Explain quantum computing.",
+    stream=True,
+)
+for event in stream:
+    if event.type == "response.output_text.delta":
+        print(event.delta, end="", flush=True)
+```
+
+- All agent Tools (Weather, Coding, Image Generation) and Skills are available
+- Multi-turn conversations via `previous_response_id`
+- API sessions appear in the chat sidebar with an **API** badge
+- Streaming (SSE) and non-streaming response modes
+- For HTTPS/LAN access, see [OpenAI API Setup Guide](assets/docs/guides/openai-api-setup.md)
 
 ---
 

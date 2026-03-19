@@ -1,16 +1,19 @@
 """FastAPI application entry point.
 
 - Mounts AG-UI endpoint (CTR-0009)
+- Mounts OpenAI-compatible Responses API (CTR-0057, PRP-0030)
 - Launches DevUI server (CTR-0025, PRP-0016)
 - Mounts session management API (CTR-0015)
 - Mounts image upload API (CTR-0022)
 - Mounts speech-to-text API (CTR-0021)
 - Mounts text-to-speech API (CTR-0039)
 - Mounts prompt templates API (CTR-0047)
+- Manages MCP server lifecycle (CTR-0061, PRP-0031)
 - Serves frontend build artifacts (CTR-0005)
 - Loads configuration (CTR-0006)
 """
 
+from contextlib import asynccontextmanager
 import importlib.metadata
 from pathlib import Path
 import sys
@@ -35,6 +38,8 @@ from app.agui.endpoint import register_agui_endpoints
 from app.core.config import settings
 from app.devui.launcher import launch_devui_if_enabled
 from app.image_gen.router import router as image_edit_router
+from app.mcp.lifecycle import activate_mcp, prepare_mcp, shutdown_mcp
+from app.openai_api.router import register_openai_api
 from app.prompt_templates.router import router as templates_router
 from app.session.router import router as session_router
 from app.stt.router import router as stt_router
@@ -65,9 +70,22 @@ except importlib.metadata.PackageNotFoundError:
     else:
         _app_version = "0.0.0"
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Application lifespan: startup and shutdown hooks."""
+    # Startup: activate MCP servers (CTR-0061, PRP-0031)
+    # prepare_mcp() was already called at module level before create_agent()
+    await activate_mcp()
+    yield
+    # Shutdown: stop MCP servers
+    await shutdown_mcp()
+
+
 app = FastAPI(
     title="OpenChatCi",
     version=_app_version,
+    lifespan=lifespan,
     docs_url="/docs" if settings.app_debug else None,
     redoc_url="/redoc" if settings.app_debug else None,
     openapi_url="/openapi.json" if settings.app_debug else None,
@@ -117,11 +135,18 @@ if settings.elevenlabs_api_key and settings.tts_voice_id:
     )
 app.include_router(tts_router)
 
+# Prepare MCP tools synchronously before agent creation (CTR-0060, PRP-0031)
+# activate_mcp() is called later in lifespan to start servers asynchronously
+prepare_mcp()
+
 # Shared agent instance (CTR-0026)
 agent = create_agent()
 
 # AG-UI endpoint (CTR-0009)
 register_agui_endpoints(app, agent=agent)
+
+# OpenAI-compatible Responses API (CTR-0057, PRP-0030)
+register_openai_api(app, agent=agent)
 
 # DevUI server (CTR-0025)
 launch_devui_if_enabled(agent)

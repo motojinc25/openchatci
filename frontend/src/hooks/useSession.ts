@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import type { ChatMessage, ImageRef, ReasoningBlock, SessionSummary, ToolCall, UsageInfo } from '@/types/chat'
+import type {
+  ActivityEntry,
+  ChatMessage,
+  ImageRef,
+  ReasoningBlock,
+  SessionSummary,
+  ToolCall,
+  UsageInfo,
+} from '@/types/chat'
 
 const STORAGE_KEY = 'openchatci-thread-id'
 
@@ -24,7 +32,11 @@ function convertMafMessages(mafMessages: Record<string, unknown>[]): ChatMessage
         if ((c.type === 'text' || c.type === 'text_content') && typeof c.text === 'string') {
           text += c.text
         } else if ((c.type === 'text_reasoning' || c.type === 'reasoning_content') && typeof c.text === 'string') {
-          reasoningBlocks.push({ id: crypto.randomUUID(), content: c.text, status: 'done' })
+          reasoningBlocks.push({
+            id: (c.id as string) ?? crypto.randomUUID(),
+            content: c.text,
+            status: 'done',
+          })
         } else if (c.type === 'image_url' && typeof c.uri === 'string') {
           images.push({ uri: c.uri as string, media_type: (c.media_type as string) || '' })
         }
@@ -51,6 +63,16 @@ function convertMafMessages(mafMessages: Record<string, unknown>[]): ChatMessage
       usage = rawUsage as UsageInfo
     }
 
+    // Restore activity_log for correct rendering order (CTR-0060, PRP-0031)
+    const rawActivityLog = msg.activity_log as Record<string, unknown>[] | undefined
+    let activityLog: ActivityEntry[] | undefined
+    if (rawActivityLog && rawActivityLog.length > 0) {
+      activityLog = rawActivityLog.map((e) => ({
+        type: e.type as 'reasoning' | 'toolCall',
+        id: e.id as string,
+      }))
+    }
+
     result.push({
       id: (msg.message_id as string) ?? crypto.randomUUID(),
       role: role as 'user' | 'assistant',
@@ -59,6 +81,7 @@ function convertMafMessages(mafMessages: Record<string, unknown>[]): ChatMessage
       ...(reasoningBlocks.length > 0 ? { reasoningBlocks } : {}),
       ...(images.length > 0 ? { images } : {}),
       ...(toolCalls.length > 0 ? { toolCalls } : {}),
+      ...(activityLog ? { activityLog } : {}),
       ...(usage ? { usage } : {}),
     })
   }

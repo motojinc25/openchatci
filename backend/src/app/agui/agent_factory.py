@@ -5,6 +5,7 @@ can be used by both the AG-UI endpoint (CTR-0009) and DevUI server (CTR-0025).
 Weather tools (CTR-0027, PRP-0017) are registered as AI functions.
 Coding tools (CTR-0031, CTR-0032, PRP-0019) are conditionally registered.
 Agent Skills (CTR-0043, PRP-0024) are conditionally loaded via SkillsProvider.
+MCP tools (CTR-0060, PRP-0031) are dynamically loaded from config file.
 """
 
 import logging
@@ -17,6 +18,7 @@ from agent_framework.azure import AzureOpenAIResponsesClient
 from azure.identity import AzureCliCredential
 
 from app.core.config import settings
+from app.mcp.lifecycle import get_mcp_server_names, get_mcp_tools
 from app.session.provider import FileHistoryProvider
 from app.skills.provider import create_skills_provider
 from app.weather.tools import get_coords_by_city, get_current_weather_by_coords, get_weather_next_week
@@ -130,6 +132,23 @@ def create_agent() -> Agent:
             "After generating or editing an image, describe what was created."
         )
         logger.info("Image generation tools enabled (deployment=%s)", settings.image_deployment_name)
+
+    # MCP tools (CTR-0060, PRP-0031)
+    mcp_tools = get_mcp_tools()
+    if mcp_tools:
+        tools.extend(mcp_tools)
+        mcp_server_names = get_mcp_server_names()
+        servers_list = ", ".join(mcp_server_names)
+        instructions += (
+            f" You have MCP (Model Context Protocol) tools available from the following "
+            f"connected servers: {servers_list}. "
+            "When the user's request can be fulfilled by an MCP tool, ALWAYS prefer "
+            "using the MCP tool over web search or other built-in tools. "
+            "MCP tools provide direct, structured access to external services and "
+            "are more reliable than general web search for their specific domains. "
+            "After using an MCP tool, summarize the result clearly for the user."
+        )
+        logger.info("MCP tools added to agent: %d tool(s) from servers: %s", len(mcp_tools), servers_list)
 
     # Context providers (CTR-0043, PRP-0024)
     context_providers: list[Any] = [history_provider]

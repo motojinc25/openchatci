@@ -147,10 +147,15 @@ export function SessionSearchDialog({ sessions, open, onOpenChange, onSelect }: 
                   <span className="min-w-0 flex-1 truncate">
                     <HighlightedText text={session.title || 'New session'} query={query} />
                   </span>
-                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                  <span className="ml-2 flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                     {formatDateTime(session.updated_at)}
                     {session.message_count > 0 && ` · ${session.message_count} msgs`}
                     {session.image_count > 0 && ` · ${session.image_count} imgs`}
+                    {session.source === 'openai-api' && (
+                      <span className="inline-block shrink-0 rounded px-1 py-0.5 text-[10px] font-medium leading-none bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                        API
+                      </span>
+                    )}
                   </span>
                 </div>
                 {session.snippet && (

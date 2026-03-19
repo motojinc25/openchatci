@@ -7,7 +7,7 @@ interface ReasoningIndicatorProps {
   reasoningBlocks: ReasoningBlock[]
 }
 
-function ThinkingBlock({ block }: { block: ReasoningBlock }) {
+export function ThinkingBlock({ block }: { block: ReasoningBlock }) {
   const [elapsed, setElapsed] = useState(0)
   const [expanded, setExpanded] = useState(false)
   const startRef = useRef(Date.now())
@@ -25,7 +25,7 @@ function ThinkingBlock({ block }: { block: ReasoningBlock }) {
   const label = isThinking ? `Thinking${elapsed > 0 ? ` (${elapsed}s)` : '...'}` : `Thought for ${elapsed}s`
 
   return (
-    <div className="mb-2">
+    <div className="mb-1">
       <button
         type="button"
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"

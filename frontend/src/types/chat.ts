@@ -24,6 +24,8 @@ export interface UsageInfo {
   max_context_tokens?: number
 }
 
+export type ActivityEntry = { type: 'reasoning'; id: string } | { type: 'toolCall'; id: string }
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -31,6 +33,7 @@ export interface ChatMessage {
   createdAt: string
   toolCalls?: ToolCall[]
   reasoningBlocks?: ReasoningBlock[]
+  activityLog?: ActivityEntry[]
   images?: ImageRef[]
   usage?: UsageInfo
 }
@@ -53,4 +56,5 @@ export interface SessionSummary {
   message_count: number
   image_count: number
   pinned_at: string | null
+  source?: 'ag-ui' | 'openai-api'
 }

@@ -67,6 +67,7 @@ def _read_session_metadata(path: Path) -> dict[str, Any] | None:
             "message_count": data.get("message_count", 0),
             "image_count": data.get("image_count", 0),
             "pinned_at": data.get("pinned_at"),
+            "source": data.get("source", "ag-ui"),
         }
     except (json.JSONDecodeError, OSError):
         logger.warning("Failed to read session file: %s", path)
@@ -200,7 +201,13 @@ async def get_session(thread_id: str) -> dict[str, Any]:
 
 
 class ReasoningItem(BaseModel):
+    id: str | None = None
     content: str
+
+
+class ActivityLogItem(BaseModel):
+    type: str
+    id: str
 
 
 class ImageItem(BaseModel):
@@ -228,6 +235,7 @@ class SaveMessageItem(BaseModel):
     reasoning: list[ReasoningItem] | None = None
     images: list[ImageItem] | None = None
     tool_calls: list[ToolCallItem] | None = None
+    activity_log: list[ActivityLogItem] | None = None
     usage: UsageItem | None = None
 
 
@@ -245,7 +253,9 @@ def _to_maf_message_dict(msg: SaveMessageItem) -> dict[str, Any]:
     """
     contents: list[dict[str, Any]] = []
     if msg.reasoning:
-        contents.extend({"type": "text_reasoning", "text": r.content} for r in msg.reasoning)
+        contents.extend(
+            {"type": "text_reasoning", "text": r.content, **({"id": r.id} if r.id else {})} for r in msg.reasoning
+        )
     contents.append({"type": "text", "text": msg.content})
     if msg.images:
         contents.extend({"type": "image_url", "uri": img.uri, "media_type": img.media_type} for img in msg.images)
@@ -256,6 +266,8 @@ def _to_maf_message_dict(msg: SaveMessageItem) -> dict[str, Any]:
     }
     if msg.tool_calls:
         result["tool_calls"] = [tc.model_dump() for tc in msg.tool_calls]
+    if msg.activity_log:
+        result["activity_log"] = [al.model_dump() for al in msg.activity_log]
     if msg.usage:
         result["usage"] = msg.usage.model_dump(exclude_none=True)
     return result

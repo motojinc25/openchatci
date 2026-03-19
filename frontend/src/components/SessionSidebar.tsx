@@ -164,10 +164,17 @@ export function SessionSidebar({
                       {session.pinned_at && <Pin className="h-3 w-3 shrink-0 text-muted-foreground" />}
                       {session.title || 'New session'}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDateTime(session.updated_at)}
-                      {session.message_count > 0 && ` · ${session.message_count} msgs`}
-                      {session.image_count > 0 && ` · ${session.image_count} imgs`}
+                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <span className="truncate">
+                        {formatDateTime(session.updated_at)}
+                        {session.message_count > 0 && ` · ${session.message_count} msgs`}
+                        {session.image_count > 0 && ` · ${session.image_count} imgs`}
+                      </span>
+                      {session.source === 'openai-api' && (
+                        <span className="inline-block shrink-0 rounded px-1 py-0.5 text-[10px] font-medium leading-none bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                          API
+                        </span>
+                      )}
                     </p>
                   </>
                 )}

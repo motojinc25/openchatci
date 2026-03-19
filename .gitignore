@@ -41,3 +41,6 @@ __pycache__/
 
 # TLS Certificates
 .certs/
+
+# MCP Servers
+mcp_servers.json

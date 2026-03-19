@@ -141,8 +141,9 @@ export function useChat(options?: UseChatOptions) {
         const decoder = new TextDecoder()
         let buffer = ''
         let assistantContent = ''
-        const completedReasoning: { content: string }[] = []
+        const completedReasoning: { id: string; content: string }[] = []
         const completedToolCalls: { id: string; name: string; status: string; args?: string; result?: string }[] = []
+        const completedActivityLog: { type: string; id: string }[] = []
         let currentReasoningContent = ''
         let completedUsage: UsageInfo | undefined
         while (true) {
@@ -184,10 +185,18 @@ export function useChat(options?: UseChatOptions) {
                     content: '',
                     status: 'thinking' as const,
                   }
+                  completedActivityLog.push({ type: 'reasoning', id: reasoningBlock.id })
                   setMessages((prev) =>
                     prev.map((msg) =>
                       msg.id === assistantId
-                        ? { ...msg, reasoningBlocks: [...(msg.reasoningBlocks ?? []), reasoningBlock] }
+                        ? {
+                            ...msg,
+                            reasoningBlocks: [...(msg.reasoningBlocks ?? []), reasoningBlock],
+                            activityLog: [
+                              ...(msg.activityLog ?? []),
+                              { type: 'reasoning' as const, id: reasoningBlock.id },
+                            ],
+                          }
                         : msg,
                     ),
                   )
@@ -213,7 +222,7 @@ export function useChat(options?: UseChatOptions) {
                 }
                 case 'REASONING_MESSAGE_END': {
                   const rEndId = event.messageId
-                  completedReasoning.push({ content: currentReasoningContent })
+                  completedReasoning.push({ id: rEndId ?? '', content: currentReasoningContent })
                   currentReasoningContent = ''
                   setMessages((prev) =>
                     prev.map((msg) =>
@@ -239,9 +248,16 @@ export function useChat(options?: UseChatOptions) {
                     args: '',
                   }
                   completedToolCalls.push({ id: tcId, name: tcName, status: 'completed' })
+                  completedActivityLog.push({ type: 'toolCall', id: tcId })
                   setMessages((prev) =>
                     prev.map((msg) =>
-                      msg.id === assistantId ? { ...msg, toolCalls: [...(msg.toolCalls ?? []), toolCall] } : msg,
+                      msg.id === assistantId
+                        ? {
+                            ...msg,
+                            toolCalls: [...(msg.toolCalls ?? []), toolCall],
+                            activityLog: [...(msg.activityLog ?? []), { type: 'toolCall' as const, id: tcId }],
+                          }
+                        : msg,
                     ),
                   )
                   break
@@ -345,6 +361,9 @@ export function useChat(options?: UseChatOptions) {
           }
           if (completedToolCalls.length > 0) {
             assistantMsg.tool_calls = completedToolCalls
+          }
+          if (completedActivityLog.length > 0) {
+            assistantMsg.activity_log = completedActivityLog
           }
           if (completedUsage) {
             assistantMsg.usage = completedUsage

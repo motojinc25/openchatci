@@ -7,19 +7,17 @@ import {
   FolderSearch,
   Globe,
   ImagePlus,
-  Loader2,
   MapPin,
   Pencil,
+  Plug,
   Search,
   Terminal,
-  Wrench,
 } from 'lucide-react'
 import { useState } from 'react'
 import type { ToolCall } from '@/types/chat'
 
 interface ToolCallIndicatorProps {
   toolCalls?: ToolCall[]
-  isWaiting?: boolean
 }
 
 const toolDisplayNames: Record<string, { label: string; doneLabel: string; icon: typeof Globe }> = {
@@ -49,13 +47,13 @@ function formatJson(raw: string): string {
   }
 }
 
-function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
+export function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
   const [expanded, setExpanded] = useState(false)
   const isRunning = toolCall.status === 'running'
   const display = toolDisplayNames[toolCall.name] ?? {
-    label: `Running ${toolCall.name}...`,
-    doneLabel: `Used ${toolCall.name}`,
-    icon: Wrench,
+    label: `MCP: ${toolCall.name}...`,
+    doneLabel: `MCP: ${toolCall.name}`,
+    icon: Plug,
   }
   const Icon = display.icon
   const label = isRunning ? display.label : display.doneLabel
@@ -91,19 +89,14 @@ function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
   )
 }
 
-export function ToolCallIndicator({ toolCalls, isWaiting }: ToolCallIndicatorProps) {
-  if ((!toolCalls || toolCalls.length === 0) && !isWaiting) return null
+export function ToolCallIndicator({ toolCalls }: ToolCallIndicatorProps) {
+  if (!toolCalls || toolCalls.length === 0) return null
 
   return (
     <div className="mb-2 flex flex-col">
-      {toolCalls?.map((tc) => (
+      {toolCalls.map((tc) => (
         <ToolCallBlock key={tc.id} toolCall={tc} />
       ))}
-      {(!toolCalls || toolCalls.length === 0) && isWaiting && (
-        <div className="flex items-center text-sm text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        </div>
-      )}
     </div>
   )
 }

@@ -16,8 +16,8 @@ import {
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { ImageGenerationResults } from '@/components/ImageGenerationResult'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
-import { ReasoningIndicator } from '@/components/ReasoningIndicator'
-import { ToolCallIndicator } from '@/components/ToolCallIndicator'
+import { ReasoningIndicator, ThinkingBlock } from '@/components/ReasoningIndicator'
+import { ToolCallBlock, ToolCallIndicator } from '@/components/ToolCallIndicator'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -264,10 +264,28 @@ export function ChatMessageItem({
           </div>
         ) : (
           <>
-            {message.reasoningBlocks && message.reasoningBlocks.length > 0 && (
-              <ReasoningIndicator reasoningBlocks={message.reasoningBlocks} />
+            {message.activityLog && message.activityLog.length > 0 ? (
+              message.activityLog.map((entry) => {
+                if (entry.type === 'reasoning') {
+                  const block = message.reasoningBlocks?.find((rb) => rb.id === entry.id)
+                  return block ? <ThinkingBlock key={entry.id} block={block} /> : null
+                }
+                const tc = message.toolCalls?.find((t) => t.id === entry.id)
+                return tc ? <ToolCallBlock key={entry.id} toolCall={tc} /> : null
+              })
+            ) : (
+              <>
+                {message.reasoningBlocks && message.reasoningBlocks.length > 0 && (
+                  <ReasoningIndicator reasoningBlocks={message.reasoningBlocks} />
+                )}
+                <ToolCallIndicator toolCalls={message.toolCalls} />
+              </>
             )}
-            <ToolCallIndicator toolCalls={message.toolCalls} isWaiting={isWaiting} />
+            {isWaiting && (
+              <div className="mb-2 flex items-center text-sm text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              </div>
+            )}
             {message.toolCalls && message.toolCalls.length > 0 && <WeatherToolResults toolCalls={message.toolCalls} />}
             {message.toolCalls && message.toolCalls.length > 0 && (
               <ImageGenerationResults toolCalls={message.toolCalls} onMaskEdit={onMaskEdit} />

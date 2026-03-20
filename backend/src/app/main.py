@@ -39,6 +39,7 @@ from app.core.config import settings
 from app.devui.launcher import launch_devui_if_enabled
 from app.image_gen.router import router as image_edit_router
 from app.mcp.lifecycle import activate_mcp, prepare_mcp, shutdown_mcp
+from app.mcp_apps.router import router as mcp_apps_router
 from app.openai_api.router import register_openai_api
 from app.prompt_templates.router import router as templates_router
 from app.session.router import router as session_router
@@ -113,6 +114,9 @@ app.include_router(upload_router)
 # Mask-based image editing API (CTR-0053, PRP-0028)
 app.include_router(image_edit_router)
 
+# MCP Apps RPC bridge and HTML serving (CTR-0067, PRP-0034)
+app.include_router(mcp_apps_router)
+
 # Speech-to-Text API (CTR-0021)
 if settings.azure_openai_endpoint:
     token_provider = get_bearer_token_provider(AzureCliCredential(), "https://cognitiveservices.azure.com/.default")
@@ -157,6 +161,13 @@ launch_devui_if_enabled(agent)
 async def get_model_info():
     """Return model configuration for frontend context window display."""
     return {"max_context_tokens": settings.model_max_context_tokens}
+
+
+# MCP Apps config endpoint (CTR-0066, PRP-0034)
+@app.get("/api/mcp-apps/config", tags=["MCP Apps"])
+async def get_mcp_apps_config():
+    """Return MCP Apps configuration for frontend sandbox proxy discovery."""
+    return {"sandbox_port": settings.mcp_apps_sandbox_port}
 
 
 # Static file serving (CTR-0005)

@@ -1,6 +1,6 @@
 [project]
 name = "openchatci"
-version = "0.33.0"
+version = "0.34.0"
 description = "Hawaii-built localhost-first AI agent platform powered by Microsoft Agent Framework."
 readme = "README.md"
 license = "Apache-2.0"

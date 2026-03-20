@@ -113,7 +113,7 @@ class FileHistoryProvider(BaseHistoryProvider):
 
         self._normalize_content_types(raw_messages)
         # Strip frontend-only fields before Message.from_dict(); MAF Message doesn't accept them
-        _frontend_keys = {"tool_calls", "usage"}
+        _frontend_keys = {"tool_calls", "usage", "activity_log"}
         messages = [Message.from_dict({k: v for k, v in m.items() if k not in _frontend_keys}) for m in raw_messages]
         self._resolve_image_contents(messages, raw_messages)
         context.extend_messages(self, messages)

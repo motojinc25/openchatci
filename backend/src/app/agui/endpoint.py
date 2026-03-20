@@ -128,6 +128,7 @@ async def _stream_with_reasoning(
     msg_id: str | None = None
     reasoning_msg_id: str | None = None
     tool_call_id: str | None = None
+    tc_name_current: str | None = None
     run_error = False
     error_message = ""
 
@@ -257,6 +258,7 @@ async def _stream_with_reasoning(
                     tc_name = getattr(content, "name", None)
                     if tc_name and tc_id != tool_call_id:
                         tool_call_id = tc_id
+                        tc_name_current = tc_name
                         yield encoder.encode(
                             ToolCallStartEvent(
                                 type=EventType.TOOL_CALL_START,
@@ -296,6 +298,44 @@ async def _stream_with_reasoning(
                                 role="tool",
                             )
                         )
+                        # MCP Apps: check if this tool has UI resource (CTR-0067, PRP-0034)
+                        from app.mcp_apps.manager import fetch_ui_resource, get_ui_tool_metadata, store_app_html
+
+                        ui_meta = get_ui_tool_metadata(tc_name_current)
+                        if ui_meta:
+                            try:
+                                # Find the MCP tool instance
+                                from app.mcp.lifecycle import _mcp_server_status, _mcp_tools
+
+                                mcp_tool = None
+                                for idx, status in enumerate(_mcp_server_status):
+                                    if status["name"] == ui_meta.server_name and idx < len(_mcp_tools):
+                                        mcp_tool = _mcp_tools[idx]
+                                        break
+
+                                if mcp_tool:
+                                    ui_resource = await fetch_ui_resource(mcp_tool, ui_meta.resource_uri)
+                                    if ui_resource:
+                                        ref_id = tc_id or _generate_id()
+                                        html_filename = store_app_html(thread_id, ref_id, ui_resource.html)
+                                        yield encoder.encode(
+                                            CustomEvent(
+                                                type=EventType.CUSTOM,
+                                                name="mcp_app",
+                                                value={
+                                                    "server_name": ui_meta.server_name,
+                                                    "tool_name": ui_meta.tool_name,
+                                                    "resource_uri": ui_meta.resource_uri,
+                                                    "html_ref": f"/api/mcp-apps/html/{thread_id}/{html_filename}",
+                                                    "csp": ui_resource.csp,
+                                                    "permissions": ui_resource.permissions,
+                                                    "call_id": ref_id,
+                                                },
+                                            )
+                                        )
+                            except Exception:
+                                logger.warning("Failed to fetch MCP App UI for %s", tc_name_current, exc_info=True)
+
                         tool_call_id = None
                         # Reset text message after tool result (allows new text block)
                         if msg_id is not None:

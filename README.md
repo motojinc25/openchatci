@@ -52,6 +52,7 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - Prompt Templates: save, manage, and insert reusable prompts from "+" menu and message actions
 - Agent Skills: portable domain knowledge packages with progressive disclosure
 - MCP Integration: connect external tools via Model Context Protocol (Claude Desktop-compatible config)
+- MCP Apps: interactive UI rendered in sandboxed iframes for MCP tools with `_meta.ui` resources
 - Session management: save, search, pin, archive, fork, rename
 - Background Responses: long-running agent timeout prevention with stream resumption
 - Context window consumption display with warning levels
@@ -339,6 +340,27 @@ Create a `mcp_servers.json` file (see `backend/mcp_servers.sample.json`):
 - Tool calls display with a **Plug** icon indicator in the chat
 - Server lifecycle managed automatically (startup/shutdown with zombie process prevention)
 - Reuse your existing Claude Desktop / Claude Code / Cursor MCP configurations
+
+---
+
+### MCP Apps
+
+MCP tools that declare a `_meta.ui` resource automatically render interactive UI within chat messages. The HTML View runs in a secure double-iframe sandbox with CSP enforcement.
+
+```
+# Optional: change the sandbox proxy port (default 8081)
+# MCP_APPS_SANDBOX_PORT=8081
+```
+
+- **Automatic discovery**: UI-enabled MCP tools detected at server startup
+- **Double-iframe sandbox**: Views run on a separate origin with no access to host DOM, cookies, or storage
+- **CSP enforcement**: external resources blocked by default; servers declare required domains via metadata
+- **View-to-Server proxying**: all View interactions proxied through the Host (auditable)
+- **Display modes**: inline (in chat) and fullscreen
+- **Session persistence**: View HTML stored as files for reload restoration
+- **Progressive enhancement**: tools work as text-only when UI is unavailable or unsupported
+
+No configuration needed -- MCP Apps activates when MCP tools have `_meta.ui.resourceUri` in their definitions. The sandbox proxy starts automatically alongside MCP servers.
 
 ---
 

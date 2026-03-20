@@ -153,8 +153,21 @@ async def activate_mcp() -> None:
     else:
         logger.warning("MCP integration: no servers started successfully")
 
+    # Start MCP Apps sandbox proxy server (CTR-0066, PRP-0034)
+    if started_count > 0:
+        from app.mcp_apps.sandbox import start_sandbox_server
+
+        sandbox_port = settings.mcp_apps_sandbox_port
+        sandbox_host = settings.app_host if settings.app_host != "0.0.0.0" else "127.0.0.1"
+        start_sandbox_server(sandbox_port, host=sandbox_host)
+
     # Register emergency cleanup handlers
     _register_cleanup_handlers()
+
+    # Discover UI-enabled MCP tools for MCP Apps (CTR-0067, PRP-0034)
+    from app.mcp_apps.manager import discover_ui_tools
+
+    await discover_ui_tools(_mcp_tools, _mcp_server_status)
 
 
 async def shutdown_mcp() -> None:
@@ -165,6 +178,11 @@ async def shutdown_mcp() -> None:
     HTTP connections.
     """
     global _mcp_exit_stack
+
+    # Stop MCP Apps sandbox proxy (CTR-0066)
+    from app.mcp_apps.sandbox import stop_sandbox_server
+
+    stop_sandbox_server()
 
     if _mcp_exit_stack:
         try:

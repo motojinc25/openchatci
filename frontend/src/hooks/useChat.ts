@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage, ImageRef, UsageInfo } from '@/types/chat'
+import type { ChatMessage, ImageRef, McpAppEvent, UsageInfo } from '@/types/chat'
 
 /**
  * AG-UI protocol event types (CTR-0009).
@@ -343,6 +343,17 @@ export function useChat(options?: UseChatOptions) {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ continuation_token: event.value }),
                     }).catch(() => {})
+                  } else if (event.name === 'mcp_app' && event.value) {
+                    // MCP Apps: associate UI metadata with the current assistant message (CTR-0068)
+                    const mcpAppEvent = event.value as unknown as McpAppEvent
+                    setMessages((prev) => {
+                      const updated = [...prev]
+                      const lastAssistant = [...updated].reverse().find((m: ChatMessage) => m.role === 'assistant')
+                      if (lastAssistant) {
+                        lastAssistant.mcpApp = mcpAppEvent
+                      }
+                      return updated
+                    })
                   }
                   break
                 }

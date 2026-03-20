@@ -26,6 +26,16 @@ export interface UsageInfo {
 
 export type ActivityEntry = { type: 'reasoning'; id: string } | { type: 'toolCall'; id: string }
 
+export interface McpAppEvent {
+  server_name: string
+  tool_name: string
+  resource_uri: string
+  html_ref: string
+  csp?: Record<string, string[]>
+  permissions?: Record<string, unknown>
+  call_id: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -36,6 +46,7 @@ export interface ChatMessage {
   activityLog?: ActivityEntry[]
   images?: ImageRef[]
   usage?: UsageInfo
+  mcpApp?: McpAppEvent
 }
 
 export interface PromptTemplate {

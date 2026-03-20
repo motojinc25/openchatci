@@ -16,6 +16,7 @@ import {
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { ImageGenerationResults } from '@/components/ImageGenerationResult'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
+import { McpAppView } from '@/components/mcp-apps/McpAppView'
 import { ReasoningIndicator, ThinkingBlock } from '@/components/ReasoningIndicator'
 import { ToolCallBlock, ToolCallIndicator } from '@/components/ToolCallIndicator'
 import {
@@ -285,6 +286,14 @@ export function ChatMessageItem({
               <div className="mb-2 flex items-center text-sm text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               </div>
+            )}
+            {/* MCP App View (CTR-0068) */}
+            {!isUser && message.mcpApp && (
+              <McpAppView
+                event={message.mcpApp}
+                toolResult={message.toolCalls?.find((tc) => tc.id === message.mcpApp?.call_id)?.result}
+                toolArgs={message.toolCalls?.find((tc) => tc.id === message.mcpApp?.call_id)?.args}
+              />
             )}
             {message.toolCalls && message.toolCalls.length > 0 && <WeatherToolResults toolCalls={message.toolCalls} />}
             {message.toolCalls && message.toolCalls.length > 0 && (

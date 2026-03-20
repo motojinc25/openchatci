@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # MCP Integration (CTR-0059, PRP-0031)
     mcp_config_file: str = ""
 
+    # MCP Apps (CTR-0066, PRP-0034)
+    mcp_apps_sandbox_port: int = 8081
+
     # OpenAI Compatible API (CTR-0056, PRP-0030)
     api_key: str = ""
 

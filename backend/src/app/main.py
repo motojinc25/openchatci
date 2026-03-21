@@ -33,7 +33,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from openai import AzureOpenAI
 
-from app.agui.agent_factory import create_agent
+from app.agui.agent_factory import create_agent_registry
 from app.agui.endpoint import register_agui_endpoints
 from app.core.config import settings
 from app.devui.launcher import launch_devui_if_enabled
@@ -143,24 +143,29 @@ app.include_router(tts_router)
 # activate_mcp() is called later in lifespan to start servers asynchronously
 prepare_mcp()
 
-# Shared agent instance (CTR-0026)
-agent = create_agent()
+# Multi-Model Agent Registry (CTR-0070, PRP-0035)
+agent_registry = create_agent_registry()
 
-# AG-UI endpoint (CTR-0009)
-register_agui_endpoints(app, agent=agent)
+# AG-UI endpoint (CTR-0009) -- receives registry for per-request model selection
+register_agui_endpoints(app, agent_registry=agent_registry)
 
 # OpenAI-compatible Responses API (CTR-0057, PRP-0030)
-register_openai_api(app, agent=agent)
+register_openai_api(app, agent_registry=agent_registry)
 
-# DevUI server (CTR-0025)
-launch_devui_if_enabled(agent)
+# DevUI server (CTR-0025) -- uses default model agent
+launch_devui_if_enabled(agent_registry.get())
 
 
-# Model info endpoint (CTR-0041, PRP-0023)
+# Model info endpoint (CTR-0041, CTR-0069, PRP-0035)
 @app.get("/api/model", tags=["Model"])
 async def get_model_info():
-    """Return model configuration for frontend context window display."""
-    return {"max_context_tokens": settings.model_max_context_tokens}
+    """Return model configuration for frontend model selector and context window display."""
+    return {
+        "models": agent_registry.available_models,
+        "default_model": agent_registry.default_model,
+        "max_context_tokens": settings.get_max_context_tokens(),
+        "max_context_tokens_map": settings.max_context_tokens_map,
+    }
 
 
 # MCP Apps config endpoint (CTR-0066, PRP-0034)

@@ -5,7 +5,7 @@ to emit REASONING_* events for text_reasoning content. The upstream library's
 _emit_content() skips text_reasoning; this endpoint handles it directly.
 
 Session management is enabled via FileHistoryProvider (CTR-0014).
-Agent creation is delegated to agent_factory (CTR-0026, PRP-0016).
+Agent selection is done via AgentRegistry using state.model (CTR-0070, PRP-0035).
 Background Responses support via CTR-0045 (PRP-0025).
 """
 
@@ -34,7 +34,7 @@ from ag_ui.core import (
     ToolCallStartEvent,
 )
 from ag_ui.encoder import EventEncoder
-from agent_framework import Agent, AgentSession, Content
+from agent_framework import AgentSession, Content
 from agent_framework.exceptions import ChatClientException
 from agent_framework_ag_ui._agent_run import _normalize_response_stream
 from agent_framework_ag_ui._message_adapters import normalize_agui_input_messages
@@ -43,6 +43,7 @@ from fastapi.responses import StreamingResponse
 from openai import NotFoundError as OpenAINotFoundError
 from pydantic import AliasChoices, BaseModel, Field
 
+from app.agui.agent_registry import AgentRegistry
 from app.core.config import settings
 from app.image_gen.tools import current_thread_id as _image_gen_thread_id
 
@@ -105,13 +106,14 @@ def _inject_image_content(
 
 
 async def _stream_with_reasoning(
-    agent: Agent,
+    agent_registry: AgentRegistry,
     request_body: AGUIRequest,
 ) -> AsyncGenerator[str, None]:
     """Stream AG-UI events including REASONING_* for text_reasoning content.
 
     Iterates the MAF agent response stream directly to emit reasoning events
     that agent-framework-ag-ui's _emit_content() would otherwise skip.
+    Selects the Agent from the registry based on state.model (CTR-0070).
     """
     encoder = EventEncoder()
     thread_id = request_body.thread_id or _generate_id()
@@ -146,12 +148,17 @@ async def _stream_with_reasoning(
             "ag_ui_run_id": run_id,
         }
 
-        # Read background options from AG-UI state (CTR-0045, PRP-0025)
+        # Read model and background options from AG-UI state (CTR-0070, CTR-0045)
+        selected_model = None
         background = False
         continuation_token = None
         if request_body.state:
+            selected_model = request_body.state.get("model")
             background = request_body.state.get("background", False)
             continuation_token = request_body.state.get("continuation_token")
+
+        # Select agent from registry based on model (CTR-0070, PRP-0035)
+        agent = agent_registry.get(selected_model)
 
         # Validate continuation_token format: MAF expects dict with "response_id"
         if continuation_token and isinstance(continuation_token, str):
@@ -350,7 +357,9 @@ async def _stream_with_reasoning(
                 elif content_type == "usage":
                     usage_details = getattr(content, "usage_details", None) or {}
                     usage_value = dict(usage_details)
-                    usage_value["max_context_tokens"] = settings.model_max_context_tokens
+                    model_name = selected_model or agent_registry.default_model
+                    usage_value["max_context_tokens"] = settings.get_max_context_tokens(model_name)
+                    usage_value["model"] = model_name
                     yield encoder.encode(
                         CustomEvent(
                             type=EventType.CUSTOM,
@@ -410,18 +419,18 @@ async def _stream_with_reasoning(
     )
 
 
-def register_agui_endpoints(app: FastAPI, *, agent: Agent) -> None:
+def register_agui_endpoints(app: FastAPI, *, agent_registry: AgentRegistry) -> None:
     """Register custom AG-UI endpoint with reasoning support (CTR-0009).
 
     Replaces add_agent_framework_fastapi_endpoint() to handle text_reasoning
     content that the upstream library skips. CORS is handled at app level.
-    Agent instance is created by agent_factory (CTR-0026).
+    AgentRegistry is created by agent_factory (CTR-0070).
     """
 
     @app.post("/ag-ui/", tags=["AG-UI"])
     async def agui_endpoint(request_body: AGUIRequest):
         return StreamingResponse(
-            _stream_with_reasoning(agent, request_body),
+            _stream_with_reasoning(agent_registry, request_body),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

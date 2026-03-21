@@ -1,7 +1,9 @@
-"""Agent factory for shared Agent instance (CTR-0026, PRP-0016).
+"""Agent factory for Multi-Model Agent Registry (CTR-0026, CTR-0070, PRP-0035).
 
-Extracts agent creation logic from endpoint.py so the same Agent instance
-can be used by both the AG-UI endpoint (CTR-0009) and DevUI server (CTR-0025).
+Creates an AgentRegistry maintaining one Agent instance per configured
+deployment name. All agents share the same Tools, Skills, MCP tools,
+and context_providers. Only the underlying client differs.
+
 Weather tools (CTR-0027, PRP-0017) are registered as AI functions.
 Coding tools (CTR-0031, CTR-0032, PRP-0019) are conditionally registered.
 Agent Skills (CTR-0043, PRP-0024) are conditionally loaded via SkillsProvider.
@@ -13,10 +15,7 @@ from pathlib import Path
 import platform
 from typing import Any
 
-from agent_framework import Agent
-from agent_framework.azure import AzureOpenAIResponsesClient
-from azure.identity import AzureCliCredential
-
+from app.agui.agent_registry import AgentRegistry
 from app.core.config import settings
 from app.mcp.lifecycle import get_mcp_server_names, get_mcp_tools
 from app.session.provider import FileHistoryProvider
@@ -68,20 +67,22 @@ def _validate_coding_config() -> None:
         raise ValueError(msg)
 
 
-def create_chat_client() -> AzureOpenAIResponsesClient:
-    """Create an AzureOpenAIResponsesClient for the agent."""
-    return AzureOpenAIResponsesClient(
+def create_agent_registry() -> AgentRegistry:
+    """Create the AgentRegistry with one Agent per configured model (CTR-0070).
+
+    Replaces the former create_agent() single-instance pattern.
+    """
+    # Web search tool requires a client -- use the default model's client to obtain it.
+    # The tool object itself is model-agnostic (it calls a separate search service).
+    from agent_framework.azure import AzureOpenAIResponsesClient
+    from azure.identity import AzureCliCredential
+
+    _temp_client = AzureOpenAIResponsesClient(
         credential=AzureCliCredential(),
         endpoint=settings.azure_openai_endpoint or None,
-        deployment_name=settings.azure_openai_responses_deployment_name,
+        deployment_name=settings.default_model,
     )
-
-
-def create_agent() -> Agent:
-    """Create the shared Agent instance for AG-UI and DevUI (CTR-0026)."""
-    client = create_chat_client()
-
-    web_search_tool = client.get_web_search_tool(
+    web_search_tool = _temp_client.get_web_search_tool(
         user_location={"type": "approximate", "country": settings.web_search_country},
     )
 
@@ -89,9 +90,7 @@ def create_agent() -> Agent:
         sessions_dir=Path(settings.sessions_dir),
     )
 
-    default_options: dict[str, Any] = {}
-    if settings.reasoning_effort:
-        default_options["reasoning"] = {"effort": settings.reasoning_effort, "summary": "detailed"}
+    # NOTE: reasoning_effort is resolved per-model in AgentRegistry (CTR-0069)
 
     # Base tools and instructions
     tools: list[Any] = [web_search_tool, get_coords_by_city, get_current_weather_by_coords, get_weather_next_week]
@@ -156,14 +155,10 @@ def create_agent() -> Agent:
     if skills_provider:
         context_providers.append(skills_provider)
 
-    agent = Agent(
-        name="OpenChatCi-Agent",
-        instructions=instructions,
-        client=client,
+    registry = AgentRegistry(
         tools=tools,
         context_providers=context_providers,
-        default_options=default_options or None,
+        instructions=instructions,
     )
 
-    logger.info("Agent created: %s (model=%s)", agent.name, settings.azure_openai_responses_deployment_name)
-    return agent
+    return registry

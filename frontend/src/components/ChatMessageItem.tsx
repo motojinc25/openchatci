@@ -1,6 +1,7 @@
 import {
   Bot,
   Check,
+  ChevronDown,
   Copy,
   Download,
   FileText,
@@ -58,6 +59,10 @@ interface ChatMessageItemProps {
   onBranch?: () => void
   onSaveAsTemplate?: (content: string) => void
   onMaskEdit?: (imageUrl: string) => void
+  /** Available models for regenerate-with-model dropdown (CTR-0071) */
+  availableModels?: string[]
+  /** Regenerate with a specific model (CTR-0071) */
+  onRegenerateWithModel?: (messageId: string, model: string) => void
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -155,6 +160,8 @@ export function ChatMessageItem({
   onBranch,
   onSaveAsTemplate,
   onMaskEdit,
+  availableModels,
+  onRegenerateWithModel,
 }: ChatMessageItemProps) {
   const isUser = message.role === 'user'
   const hasTextContent = message.content != null && message.content.trim().length > 0
@@ -162,6 +169,7 @@ export function ChatMessageItem({
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [regenModelOpen, setRegenModelOpen] = useState(false)
   const editRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -333,14 +341,54 @@ export function ChatMessageItem({
               </Button>
             )}
             {!isUser && onRegenerateAssistant && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                onClick={handleRegenerate}
-                aria-label="Regenerate response">
-                <RefreshCw className="h-3 w-3" />
-              </Button>
+              <div className="relative flex items-center">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                  onClick={handleRegenerate}
+                  aria-label="Regenerate response">
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+                {availableModels && availableModels.length > 1 && onRegenerateWithModel && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-4 -ml-1 text-muted-foreground hover:text-foreground"
+                      onClick={() => setRegenModelOpen((prev) => !prev)}
+                      aria-label="Regenerate with model">
+                      <ChevronDown className="h-2.5 w-2.5" />
+                    </Button>
+                    {regenModelOpen && (
+                      <>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          className="fixed inset-0 z-40 cursor-default bg-transparent border-none"
+                          onClick={() => setRegenModelOpen(false)}
+                          aria-label="Close model menu"
+                        />
+                        <div className="absolute top-full mt-1 left-0 z-50 min-w-[180px] rounded-md border bg-popover p-1 shadow-md">
+                          {availableModels.map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground"
+                              onClick={() => {
+                                setRegenModelOpen(false)
+                                onRegenerateWithModel(message.id, m)
+                              }}>
+                              <RefreshCw className="h-3 w-3" />
+                              <span>Regenerate with {m}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
             )}
             {!isUser && onBranch && (
               <Button
@@ -361,6 +409,9 @@ export function ChatMessageItem({
                 aria-label="Delete message">
                 <Trash2 className="h-3 w-3" />
               </Button>
+            )}
+            {!isUser && message.model && (
+              <span className="ml-1 text-[11px] text-muted-foreground/50">{message.model}</span>
             )}
             {!isUser && message.usage && (
               <span className="ml-1 text-[11px] tabular-nums text-muted-foreground/60">

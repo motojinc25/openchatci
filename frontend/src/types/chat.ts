@@ -47,6 +47,8 @@ export interface ChatMessage {
   images?: ImageRef[]
   usage?: UsageInfo
   mcpApp?: McpAppEvent
+  /** Model that generated this assistant message (CTR-0071, PRP-0035) */
+  model?: string
 }
 
 export interface PromptTemplate {

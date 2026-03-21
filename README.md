@@ -53,6 +53,7 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - Agent Skills: portable domain knowledge packages with progressive disclosure
 - MCP Integration: connect external tools via Model Context Protocol (Claude Desktop-compatible config)
 - MCP Apps: interactive UI rendered in sandboxed iframes for MCP tools with `_meta.ui` resources
+- Multi-model switching: switch between OpenAI models mid-conversation with per-model reasoning and context window
 - Session management: save, search, pin, archive, fork, rename
 - Background Responses: long-running agent timeout prevention with stream resumption
 - Context window consumption display with warning levels
@@ -138,7 +139,7 @@ uv sync --prerelease=allow
 
 ```
 AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
-AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=gpt-5.4
+AZURE_OPENAI_MODELS=gpt-4o
 ```
 
 ---
@@ -444,15 +445,37 @@ When SSL is not configured, the server runs in HTTP mode as usual (no breaking c
 
 ---
 
+### Multi-Model Switching
+
+Switch between OpenAI-family models mid-conversation:
+
+```
+AZURE_OPENAI_MODELS=gpt-4o,o3,gpt-4.1-mini
+```
+
+- **Model selector dropdown** appears above the chat input (hidden when only one model configured)
+- **Per-session model selection** persisted across page reloads
+- **Regenerate with different model**: click the chevron on the Regenerate button to choose a model
+- **Per-message model label**: each assistant message shows which model generated it
+- All models share the same Tools, Skills, and MCP integrations
+
+Per-model reasoning effort (only listed models send the parameter):
+
+```
+REASONING_EFFORT=o3:high,o4-mini:medium
+```
+
+Per-model context window limits:
+
+```
+MODEL_MAX_CONTEXT_TOKENS=gpt-4o:128000,o3:200000,gpt-4.1-mini:1047576
+```
+
+---
+
 ### Context Window
 
-Configure the model's context window size for the consumption progress bar:
-
-```
-MODEL_MAX_CONTEXT_TOKENS=1050000
-```
-
-The progress bar shows consumption rate above the chat input. Colors change at 80% (amber) and 95% (red).
+The progress bar above the chat input shows context window consumption rate. Colors change at 80% (amber) and 95% (red). When multiple models are configured, the display updates automatically when switching models.
 
 ---
 

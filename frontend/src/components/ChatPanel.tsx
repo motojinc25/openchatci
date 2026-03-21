@@ -5,6 +5,7 @@ import { ChatInput, type ChatInputHandle } from '@/components/ChatInput'
 import { ChatMessageItem } from '@/components/ChatMessageItem'
 import { ContextWindowIndicator } from '@/components/ContextWindowIndicator'
 import { MaskEditorDialog } from '@/components/MaskEditorDialog'
+import { ModelSelector } from '@/components/ModelSelector'
 import { PromptTemplatesModal } from '@/components/templates/PromptTemplatesModal'
 import { SaveAsTemplateDialog } from '@/components/templates/SaveAsTemplateDialog'
 import { useChat } from '@/hooks/useChat'
@@ -58,10 +59,18 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [bgEnabled, setBgEnabled] = useState(() => localStorage.getItem(BG_STORAGE_KEY) === 'true')
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [selectedModel, setSelectedModel] = useState('')
+  const [modelMaxTokens, setModelMaxTokens] = useState(128000)
+  const [availableModels, setAvailableModels] = useState<string[]>([])
 
   const handleBgToggle = useCallback((enabled: boolean) => {
     setBgEnabled(enabled)
     localStorage.setItem(BG_STORAGE_KEY, String(enabled))
+  }, [])
+
+  const handleModelChange = useCallback((model: string, maxTokens: number) => {
+    setSelectedModel(model)
+    setModelMaxTokens(maxTokens)
   }, [])
 
   // Auto-dismiss notification
@@ -87,6 +96,7 @@ export function ChatPanel({
     stopGeneration,
     editUserMessage,
     regenerateAssistantMessage,
+    regenerateWithModel,
     editAssistantMessage,
     deleteMessage,
     resumeFromToken,
@@ -95,6 +105,7 @@ export function ChatPanel({
     initialMessages,
     onStreamComplete,
     bgEnabled,
+    selectedModel,
   })
 
   // Auto-resume from continuation_token (page reload or sidebar switch).
@@ -183,13 +194,13 @@ export function ChatPanel({
 
   const [isDragging, setIsDragging] = useState(false)
   const dragCountRef = useRef(0)
-  const [maxContextTokens, setMaxContextTokens] = useState<number | undefined>()
-
+  // Fetch model info for single-model fallback and available models list
   useEffect(() => {
     fetch('/api/model')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.max_context_tokens) setMaxContextTokens(data.max_context_tokens)
+        if (data?.max_context_tokens) setModelMaxTokens((prev) => (prev === 128000 ? data.max_context_tokens : prev))
+        if (data?.models) setAvailableModels(data.models)
       })
       .catch(() => {})
   }, [])
@@ -282,6 +293,8 @@ export function ChatPanel({
               onBranch={onBranchFromMessage ? () => onBranchFromMessage(i) : undefined}
               onSaveAsTemplate={handleSaveAsTemplate}
               onMaskEdit={handleMaskEdit}
+              availableModels={availableModels}
+              onRegenerateWithModel={regenerateWithModel}
             />
           ))}
         </div>
@@ -302,8 +315,9 @@ export function ChatPanel({
       {compact ? (
         <div>
           <div className="flex items-center justify-end gap-1 px-4">
+            <ModelSelector threadId={threadId ?? ''} onModelChange={handleModelChange} />
             <BackgroundResponsesToggle enabled={bgEnabled} onToggle={handleBgToggle} />
-            <ContextWindowIndicator usage={latestUsage} maxContextTokens={maxContextTokens} />
+            <ContextWindowIndicator usage={latestUsage} maxContextTokens={modelMaxTokens} />
           </div>
           <ChatInput
             ref={chatInputRef}
@@ -324,8 +338,9 @@ export function ChatPanel({
           <div className="pointer-events-none bg-gradient-to-t from-background from-60% to-transparent pt-6" />
           <div className="relative bg-background">
             <div className="mx-auto flex max-w-3xl items-center justify-end gap-1 px-4">
+              <ModelSelector threadId={threadId ?? ''} onModelChange={handleModelChange} />
               <BackgroundResponsesToggle enabled={bgEnabled} onToggle={handleBgToggle} />
-              <ContextWindowIndicator usage={latestUsage} maxContextTokens={maxContextTokens} />
+              <ContextWindowIndicator usage={latestUsage} maxContextTokens={modelMaxTokens} />
             </div>
             <ChatInput
               ref={chatInputRef}

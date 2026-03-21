@@ -23,6 +23,7 @@ interface UseChatOptions {
   initialMessages?: ChatMessage[]
   onStreamComplete?: () => void
   bgEnabled?: boolean
+  selectedModel?: string
 }
 
 /**
@@ -37,6 +38,7 @@ export function useChat(options?: UseChatOptions) {
   const threadIdRef = useRef(options?.threadId ?? crypto.randomUUID())
   const onStreamCompleteRef = useRef(options?.onStreamComplete)
   const bgEnabledRef = useRef(options?.bgEnabled ?? false)
+  const selectedModelRef = useRef(options?.selectedModel ?? '')
 
   useEffect(() => {
     if (options?.threadId) {
@@ -61,11 +63,20 @@ export function useChat(options?: UseChatOptions) {
     bgEnabledRef.current = options?.bgEnabled ?? false
   }, [options?.bgEnabled])
 
+  useEffect(() => {
+    selectedModelRef.current = options?.selectedModel ?? ''
+  }, [options?.selectedModel])
+
   const streamResponse = useCallback(
     async (
       userContent: string,
       currentMessages: ChatMessage[],
-      options?: { skipUserMessage?: boolean; images?: ImageRef[]; resumeToken?: Record<string, unknown> },
+      options?: {
+        skipUserMessage?: boolean
+        images?: ImageRef[]
+        resumeToken?: Record<string, unknown>
+        modelOverride?: string
+      },
     ): Promise<boolean> => {
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
@@ -105,8 +116,10 @@ export function useChat(options?: UseChatOptions) {
           }).catch(() => {})
         }
 
-        // Build AG-UI request state for background mode (CTR-0045, PRP-0025)
+        // Build AG-UI request state (CTR-0045 background, CTR-0070 model)
         const aguiState: Record<string, unknown> = {}
+        const effectiveModel = options?.modelOverride || selectedModelRef.current
+        if (effectiveModel) aguiState.model = effectiveModel
         if (bgEnabledRef.current) aguiState.background = true
         if (options?.resumeToken) aguiState.continuation_token = options.resumeToken
 
@@ -331,8 +344,13 @@ export function useChat(options?: UseChatOptions) {
                 case 'CUSTOM': {
                   if (event.name === 'usage' && event.value) {
                     completedUsage = event.value as UsageInfo
+                    const usageModel = (event.value as Record<string, unknown>).model as string | undefined
                     setMessages((prev) =>
-                      prev.map((msg) => (msg.id === assistantId ? { ...msg, usage: event.value as UsageInfo } : msg)),
+                      prev.map((msg) =>
+                        msg.id === assistantId
+                          ? { ...msg, usage: event.value as UsageInfo, ...(usageModel ? { model: usageModel } : {}) }
+                          : msg,
+                      ),
                     )
                   }
                   if (event.name === 'continuation_token' && event.value) {
@@ -502,6 +520,35 @@ export function useChat(options?: UseChatOptions) {
     [streamResponse],
   )
 
+  /** Regenerate with a specific model (CTR-0071, PRP-0035). */
+  const regenerateWithModel = useCallback(
+    async (messageId: string, model: string) => {
+      const current = messagesRef.current
+      const idx = current.findIndex((m) => m.id === messageId)
+      if (idx === -1) return
+
+      let userContent = ''
+      for (let i = idx - 1; i >= 0; i--) {
+        if (current[i].role === 'user') {
+          userContent = current[i].content
+          break
+        }
+      }
+      if (!userContent) return
+
+      const truncated = current.slice(0, idx)
+
+      fetch(`/api/sessions/${threadIdRef.current}/truncate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ after_index: idx > 0 ? idx - 1 : 0, delete_from: idx }),
+      }).catch(() => {})
+
+      await streamResponse(userContent, truncated, { skipUserMessage: true, modelOverride: model })
+    },
+    [streamResponse],
+  )
+
   const deleteMessage = useCallback((messageId: string) => {
     const current = messagesRef.current
     const idx = current.findIndex((m) => m.id === messageId)
@@ -567,6 +614,7 @@ export function useChat(options?: UseChatOptions) {
     clearMessages,
     editUserMessage,
     regenerateAssistantMessage,
+    regenerateWithModel,
     editAssistantMessage,
     deleteMessage,
     resumeFromToken,

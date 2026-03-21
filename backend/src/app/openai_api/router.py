@@ -1,7 +1,8 @@
-"""OpenAI Responses API endpoint (CTR-0057, PRP-0030).
+"""OpenAI Responses API endpoint (CTR-0057, PRP-0030, PRP-0035).
 
 Custom OpenAI-compatible Responses API on the main server.
-Uses the shared Agent instance (CTR-0026) for all Tools and Skills.
+Uses the AgentRegistry (CTR-0070) to route model parameter to the
+corresponding Agent instance.
 """
 
 from collections.abc import AsyncGenerator
@@ -9,7 +10,7 @@ import json
 import logging
 from typing import Any
 
-from agent_framework import Agent, AgentSession
+from agent_framework import AgentSession
 from agent_framework.exceptions import ChatClientException
 from agent_framework_ag_ui._agent_run import _normalize_response_stream
 from agent_framework_ag_ui._message_adapters import normalize_agui_input_messages
@@ -17,6 +18,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import NotFoundError as OpenAINotFoundError
 
+from app.agui.agent_registry import AgentRegistry
 from app.image_gen.tools import current_thread_id as _image_gen_thread_id
 from app.openai_api.auth import verify_api_key
 from app.openai_api.converter import maf_contents_to_openai_output, openai_input_to_maf_messages
@@ -43,7 +45,7 @@ def _build_session_message(role: str, text: str) -> dict[str, Any]:
 
 
 async def _stream_responses(
-    agent: Agent,
+    agent_registry: AgentRegistry,
     request: ResponsesRequest,
     thread_id: str,
     response_id: str,
@@ -61,6 +63,9 @@ async def _stream_responses(
         },
     }
     yield f"event: response.created\ndata: {json.dumps(created_event)}\n\n"
+
+    # Select agent from registry based on model parameter (CTR-0070, PRP-0035)
+    agent = agent_registry.get(request.model if request.model != "openchatci" else None)
 
     messages_raw = openai_input_to_maf_messages(request.input)
     messages, _ = normalize_agui_input_messages(messages_raw)
@@ -232,10 +237,10 @@ async def _stream_responses(
     yield f"event: response.completed\ndata: {json.dumps(completed)}\n\n"
 
 
-def register_openai_api(app: FastAPI, *, agent: Agent) -> None:
+def register_openai_api(app: FastAPI, *, agent_registry: AgentRegistry) -> None:
     """Register OpenAI-compatible Responses API endpoint (CTR-0057).
 
-    Uses the shared Agent instance from agent_factory (CTR-0026).
+    Uses the AgentRegistry for model-based routing (CTR-0070).
     """
 
     @app.post("/v1/responses", tags=["OpenAI API"], dependencies=[Depends(verify_api_key)])
@@ -266,7 +271,7 @@ def register_openai_api(app: FastAPI, *, agent: Agent) -> None:
 
         if request.stream:
             return StreamingResponse(
-                _stream_responses(agent, request, thread_id, response_id),
+                _stream_responses(agent_registry, request, thread_id, response_id),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -276,6 +281,8 @@ def register_openai_api(app: FastAPI, *, agent: Agent) -> None:
             )
 
         # Non-streaming response
+        agent = agent_registry.get(request.model if request.model != "openchatci" else None)
+
         messages_raw = openai_input_to_maf_messages(request.input)
         messages, _ = normalize_agui_input_messages(messages_raw)
 

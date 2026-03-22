@@ -119,20 +119,33 @@ async def discover_ui_tools(mcp_tools: list, server_configs: list) -> None:
                 if not name:
                     continue
 
-                # _meta is preserved on the raw MCP Tool object from session.list_tools()
-                meta_raw = getattr(td, "meta", None)
-                if meta_raw is None:
-                    continue
+                # _meta can be in two locations depending on MCP SDK version:
+                # 1. tool.annotations._meta (FastMCP annotations parameter)
+                # 2. tool.meta (direct meta field on Tool object)
+                meta = None
 
-                # Convert to dict if it's a Pydantic model or dataclass
-                if hasattr(meta_raw, "model_dump"):
-                    meta = meta_raw.model_dump()
-                elif hasattr(meta_raw, "__dict__"):
-                    meta = dict(meta_raw.__dict__)
-                elif isinstance(meta_raw, dict):
-                    meta = meta_raw
-                else:
-                    continue
+                # Check annotations._meta first (FastMCP pattern)
+                annotations = getattr(td, "annotations", None)
+                if annotations is not None:
+                    meta_raw = getattr(annotations, "_meta", None)
+                    if meta_raw is not None:
+                        if isinstance(meta_raw, dict):
+                            meta = meta_raw
+                        elif hasattr(meta_raw, "model_dump"):
+                            meta = meta_raw.model_dump()
+                        elif hasattr(meta_raw, "__dict__"):
+                            meta = dict(meta_raw.__dict__)
+
+                # Fallback: check tool.meta directly
+                if meta is None:
+                    meta_raw = getattr(td, "meta", None)
+                    if meta_raw is not None:
+                        if isinstance(meta_raw, dict):
+                            meta = meta_raw
+                        elif hasattr(meta_raw, "model_dump"):
+                            meta = meta_raw.model_dump()
+                        elif hasattr(meta_raw, "__dict__"):
+                            meta = dict(meta_raw.__dict__)
 
                 if meta:
                     register_ui_tool(server_name, name, meta)

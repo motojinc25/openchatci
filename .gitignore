@@ -44,3 +44,6 @@ __pycache__/
 
 # MCP Servers
 mcp_servers.json
+
+# Batch Jobs
+.jobs/

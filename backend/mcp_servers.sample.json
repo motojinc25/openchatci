@@ -21,6 +21,18 @@
       "headers": {
         "Authorization": "Bearer your-api-token-here"
       }
+    },
+    "batch": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "app.mcp_batch.server"
+      ],
+      "env": {
+        "BATCH_JOBS_DIR": ".jobs"
+      }
     }
   }
 }

@@ -53,6 +53,7 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - Agent Skills: portable domain knowledge packages with progressive disclosure
 - MCP Integration: connect external tools via Model Context Protocol (Claude Desktop-compatible config)
 - MCP Apps: interactive UI rendered in sandboxed iframes for MCP tools with `_meta.ui` resources
+- Batch Processing: async job queue via Core MCP Server with real-time MCP Apps dashboard
 - Multi-model switching: switch between OpenAI models mid-conversation with per-model reasoning and context window
 - Session management: save, search, pin, archive, fork, rename
 - Background Responses: long-running agent timeout prevention with stream resumption
@@ -362,6 +363,35 @@ MCP tools that declare a `_meta.ui` resource automatically render interactive UI
 - **Progressive enhancement**: tools work as text-only when UI is unavailable or unsupported
 
 No configuration needed -- MCP Apps activates when MCP tools have `_meta.ui.resourceUri` in their definitions. The sandbox proxy starts automatically alongside MCP servers.
+
+---
+
+### Batch Processing
+
+Run long-running tasks (RAG ingestion, data pipelines) as background batch jobs with a real-time monitoring dashboard:
+
+1. Add `"batch"` to your `mcp_servers.json` (see `backend/mcp_servers.sample.json`)
+2. Start the server -- the batch MCP server launches automatically
+3. Ask the agent: *"Submit a sleep job for 60 seconds"*
+4. A real-time dashboard appears inline showing progress, status, and controls
+
+```json
+{
+  "mcpServers": {
+    "batch": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "app.mcp_batch.server"],
+      "env": { "BATCH_JOBS_DIR": ".jobs" }
+    }
+  }
+}
+```
+
+- **Conversation-based management**: submit, monitor, cancel, delete jobs via chat
+- **MCP Apps dashboard**: auto-refreshing progress bars, cancel/delete with confirmation dialogs
+- **File-based persistence**: each job stored as a JSON file (crash-resilient)
+- **Extensible job types**: Phase 1 includes a sample sleep job; Phase 2 adds RAG Ingestion Pipeline
+- **Cooperative cancellation**: jobs check cancel flag at each progress checkpoint
 
 ---
 

@@ -4,7 +4,7 @@ import {
   ChevronDown,
   Copy,
   Download,
-  FileText,
+  FileText as FileTextIcon,
   GitBranch,
   Loader2,
   Pencil,
@@ -252,6 +252,16 @@ export function ChatMessageItem({
             {message.images && message.images.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-2">
                 {message.images.map((img) => {
+                  const isPdf = img.uri.endsWith('.pdf') || img.media_type === 'application/pdf'
+                  if (isPdf) {
+                    const filename = img.uri.split('/').pop() || 'document.pdf'
+                    return (
+                      <div key={img.uri} className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
+                        <FileTextIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate font-medium">{filename}</span>
+                      </div>
+                    )
+                  }
                   const isGenerated = img.uri.includes('/generated_')
                   return (
                     <a key={img.uri} href={img.uri} target="_blank" rel="noopener noreferrer" className="block">
@@ -337,7 +347,7 @@ export function ChatMessageItem({
                 className="h-6 w-6 text-muted-foreground hover:text-foreground"
                 onClick={() => onSaveAsTemplate(message.content)}
                 aria-label="Save as template">
-                <FileText className="h-3 w-3" />
+                <FileTextIcon className="h-3 w-3" />
               </Button>
             )}
             {!isUser && onRegenerateAssistant && (

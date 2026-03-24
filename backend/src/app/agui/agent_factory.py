@@ -119,6 +119,42 @@ def create_agent_registry() -> AgentRegistry:
             settings.coding_max_turns,
         )
 
+    # RAG Search tool (CTR-0077, PRP-0037)
+    if settings.chroma_dir:
+        try:
+            from app.rag.tools import init_rag_search, rag_search
+
+            init_rag_search(
+                chroma_dir=settings.chroma_dir,
+                collection_name=settings.rag_collection_name,
+                top_k=settings.rag_top_k,
+            )
+            tools.append(rag_search)
+            instructions += (
+                "\n\n## RAG (Retrieval-Augmented Generation) - IMPORTANT\n"
+                "You have a local document knowledge base powered by rag_search. "
+                "ALWAYS use rag_search FIRST (before web search) when:\n"
+                "- The user asks about content from uploaded/ingested documents or PDFs\n"
+                "- The user references a specific document, report, or file by name\n"
+                "- The user says 'this document', 'the PDF', 'the report', 'the file'\n"
+                "- The conversation previously involved PDF ingestion\n"
+                "- The user asks to 'search documents', 'find in documents', or 'look up in the knowledge base'\n\n"
+                "To ingest a PDF: use submit_job with job_type='rag-ingest' and "
+                "params={'file_path': '<path from [Attached PDF: ...] reference>'}.\n"
+                "To search documents: use rag_search with the user's question as the query.\n"
+                "Include source citations (filename, page number) when presenting RAG results.\n"
+                "If rag_search returns no results, inform the user and optionally fall back to web search."
+            )
+            logger.info(
+                "RAG search tool enabled (chroma_dir=%s, collection=%s)",
+                settings.chroma_dir,
+                settings.rag_collection_name,
+            )
+        except ImportError:
+            logger.info("chromadb not installed, RAG search tool skipped")
+        except Exception:
+            logger.exception("Failed to initialize RAG search tool")
+
     # Conditionally register image generation tools (CTR-0050, PRP-0027)
     if settings.image_deployment_name:
         from app.image_gen.tools import edit_image, generate_image

@@ -53,6 +53,7 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - Agent Skills: portable domain knowledge packages with progressive disclosure
 - MCP Integration: connect external tools via Model Context Protocol (Claude Desktop-compatible config)
 - MCP Apps: interactive UI rendered in sandboxed iframes for MCP tools with `_meta.ui` resources
+- RAG Pipeline: PDF ingestion with ChromaDB vector search, Azure OpenAI embedding, and source citations
 - Batch Processing: async job queue via Core MCP Server with real-time MCP Apps dashboard
 - Multi-model switching: switch between OpenAI models mid-conversation with per-model reasoning and context window
 - Session management: save, search, pin, archive, fork, rename
@@ -366,6 +367,36 @@ No configuration needed -- MCP Apps activates when MCP tools have `_meta.ui.reso
 
 ---
 
+### RAG Pipeline
+
+Upload PDF documents and ask questions about their content using vector similarity search:
+
+```
+CHROMA_DIR=.chroma
+RAG_COLLECTION_NAME=default
+RAG_TOP_K=5
+EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small
+RAG_CHUNK_SIZE=800
+RAG_CHUNK_OVERLAP=200
+```
+
+1. Click **+** button > **Attach PDF** to upload a document
+2. Ask the agent: *"Please ingest this document"*
+3. The batch job processes: PDF parsing > chunking > embedding > ChromaDB storage
+4. Ask questions: *"What does the document say about X?"*
+5. The agent searches the knowledge base and responds with source citations (filename, page)
+
+- **ChromaDB PersistentClient**: file-based vector storage (`.chroma/` directory)
+- **Azure OpenAI Embedding**: `text-embedding-3-small` for consistent multilingual quality
+- **Overlap chunking**: configurable chunk size (800 chars) and overlap (200 chars)
+- **Metadata filtering**: source filename, page number, chunk index for precise citation
+- **Deduplication**: re-ingesting the same file overwrites existing chunks automatically
+- **PDF file cards**: PDFs display as file icon cards (not image thumbnails) in chat
+
+Requires the Batch Processing MCP Server to be configured (see below).
+
+---
+
 ### Batch Processing
 
 Run long-running tasks (RAG ingestion, data pipelines) as background batch jobs with a real-time monitoring dashboard:
@@ -390,7 +421,7 @@ Run long-running tasks (RAG ingestion, data pipelines) as background batch jobs 
 - **Conversation-based management**: submit, monitor, cancel, delete jobs via chat
 - **MCP Apps dashboard**: auto-refreshing progress bars, cancel/delete with confirmation dialogs
 - **File-based persistence**: each job stored as a JSON file (crash-resilient)
-- **Extensible job types**: Phase 1 includes a sample sleep job; Phase 2 adds RAG Ingestion Pipeline
+- **Extensible job types**: sample sleep job + RAG Ingestion Pipeline (`rag-ingest`)
 - **Cooperative cancellation**: jobs check cancel flag at each progress checkpoint
 
 ---

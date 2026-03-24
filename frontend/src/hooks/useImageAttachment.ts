@@ -9,14 +9,21 @@ export interface ImageAttachment {
   status: 'uploading' | 'ready' | 'error'
 }
 
-const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
-const MAX_SIZE = 20 * 1024 * 1024 // 20MB
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+const PDF_TYPE = 'application/pdf'
+const ALLOWED_TYPES = new Set([...IMAGE_TYPES, PDF_TYPE])
+const MAX_SIZE_IMAGE = 20 * 1024 * 1024 // 20MB
+const MAX_SIZE_PDF = 50 * 1024 * 1024 // 50MB
 
 export function useImageAttachment() {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
 
   const addFiles = useCallback(async (files: FileList | File[], threadId: string) => {
-    const validFiles = Array.from(files).filter((f) => ALLOWED_TYPES.has(f.type) && f.size <= MAX_SIZE)
+    const validFiles = Array.from(files).filter((f) => {
+      if (!ALLOWED_TYPES.has(f.type)) return false
+      const maxSize = f.type === PDF_TYPE ? MAX_SIZE_PDF : MAX_SIZE_IMAGE
+      return f.size <= maxSize
+    })
     if (validFiles.length === 0) return
 
     const newAttachments: ImageAttachment[] = validFiles.map((file) => ({

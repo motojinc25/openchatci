@@ -66,6 +66,37 @@ def _generate_id() -> str:
     return str(uuid.uuid4())
 
 
+def _strip_pdf_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove PDF image_url entries from message content arrays.
+
+    When session history includes messages with PDF attachments stored as
+    image_url content entries, normalize_agui_input_messages would convert
+    them to MAF Content objects. Azure OpenAI Responses API rejects non-image
+    content types, causing 400 errors. This function strips PDF entries before
+    normalization. PDF references are injected as text by _inject_image_content.
+    """
+    cleaned: list[dict[str, Any]] = []
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            # Filter out PDF image_url entries from content array
+            filtered = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "image_url":
+                    url_info = item.get("image_url", {})
+                    url = url_info.get("url", "") if isinstance(url_info, dict) else ""
+                    if url.endswith(".pdf") or "application/pdf" in str(url_info):
+                        continue  # Skip PDF entries
+                filtered.append(item)
+            if filtered != content:
+                msg = {**msg, "content": filtered or msg.get("content", "")}
+                # If content is now empty list or has only empty items, convert to empty string
+                if isinstance(msg["content"], list) and not msg["content"]:
+                    msg["content"] = ""
+        cleaned.append(msg)
+    return cleaned
+
+
 def _inject_image_content(
     maf_messages: list[Any],
     raw_messages: list[dict[str, Any]],
@@ -92,9 +123,19 @@ def _inject_image_content(
                 break
         if target is None:
             continue
+        pdf_refs: list[str] = []
         for img in images:
             uri = img.get("uri", "")
             media_type = img.get("media_type", "")
+            # PDF files: collect references for text injection (not sent as image content)
+            if media_type == "application/pdf" or uri.endswith(".pdf"):
+                if uri.startswith("/api/uploads/"):
+                    parts = uri.split("/")  # ["", "api", "uploads", thread_id, filename]
+                    if len(parts) >= 5:
+                        # Convert API URI to disk path for submit_job file_path param
+                        disk_path = f"{settings.upload_dir}/{parts[3]}/{parts[4]}"
+                        pdf_refs.append(f"[Attached PDF: {parts[4]}, file_path={disk_path}]")
+                continue
             if uri.startswith("/api/uploads/"):
                 parts = uri.split("/")  # ["", "api", "uploads", thread_id, filename]
                 if len(parts) >= 5:
@@ -103,6 +144,23 @@ def _inject_image_content(
                         target.contents.append(Content.from_data(data=file_path.read_bytes(), media_type=media_type))
             elif uri.startswith(("http://", "https://")):
                 target.contents.append(Content.from_uri(uri=uri, media_type=media_type))
+
+        # Append PDF references as text so the agent knows the file paths
+        if pdf_refs and target is not None:
+            existing_text = ""
+            for c in target.contents:
+                if getattr(c, "type", None) == "text":
+                    existing_text = getattr(c, "text", "")
+                    break
+            pdf_info = "\n".join(pdf_refs)
+            if existing_text:
+                # Replace the text content to include PDF references
+                for i, c in enumerate(target.contents):
+                    if getattr(c, "type", None) == "text":
+                        target.contents[i] = Content.from_text(text=f"{existing_text}\n\n{pdf_info}")
+                        break
+            else:
+                target.contents.append(Content.from_text(text=pdf_info))
 
 
 async def _stream_with_reasoning(
@@ -135,8 +193,14 @@ async def _stream_with_reasoning(
     error_message = ""
 
     try:
+        # Pre-process: strip PDF image_url entries from messages before normalization.
+        # normalize_agui_input_messages converts image_url content to MAF Content,
+        # but Azure OpenAI Responses API rejects non-image content types (e.g., PDF).
+        # PDF references are injected as text by _inject_image_content instead.
+        sanitized_messages = _strip_pdf_content(request_body.messages)
+
         # Convert AG-UI messages to MAF Message objects
-        messages, _ = normalize_agui_input_messages(request_body.messages)
+        messages, _ = normalize_agui_input_messages(sanitized_messages)
 
         # Inject image content from request into MAF messages (CTR-0022)
         _inject_image_content(messages, request_body.messages)

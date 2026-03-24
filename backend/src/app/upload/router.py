@@ -1,7 +1,8 @@
-"""Image upload REST API (CTR-0022).
+"""File upload REST API (CTR-0022, CTR-0078).
 
-Provides endpoints for uploading images and serving uploaded files.
+Provides endpoints for uploading images and PDFs, and serving uploaded files.
 Uploaded files are stored in {UPLOAD_DIR}/{thread_id}/{filename}.
+Supports image/* MIME types (20MB limit) and application/pdf (50MB limit).
 """
 
 import logging
@@ -18,8 +19,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Upload"])
 
-ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"}
+MAX_FILE_SIZE_IMAGE = 20 * 1024 * 1024  # 20MB for images
+MAX_FILE_SIZE_PDF = 50 * 1024 * 1024  # 50MB for PDFs
 
 
 def _upload_dir() -> Path:
@@ -50,11 +52,12 @@ async def upload_image(thread_id: str, file: UploadFile) -> UploadResponse:
     if not safe_name or safe_name.startswith("."):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
+    max_size = MAX_FILE_SIZE_PDF if content_type == "application/pdf" else MAX_FILE_SIZE_IMAGE
     data = await file.read()
-    if len(data) > MAX_FILE_SIZE:
+    if len(data) > max_size:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+            detail=f"File too large. Maximum size: {max_size // (1024 * 1024)}MB",
         )
 
     # Save to {UPLOAD_DIR}/{thread_id}/{filename}

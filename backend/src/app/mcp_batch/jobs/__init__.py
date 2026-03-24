@@ -9,11 +9,13 @@ if TYPE_CHECKING:
     from app.mcp_batch.models import Job
     from app.mcp_batch.storage import JobStorage
 
+from app.mcp_batch.jobs.rag_ingest import run_rag_ingest_job
 from app.mcp_batch.jobs.sleep import run_sleep_job
 
 # Map job_type string -> async job function
 JOB_REGISTRY: dict[str, object] = {
     "sleep": run_sleep_job,
+    "rag-ingest": run_rag_ingest_job,
 }
 
 

@@ -14,11 +14,18 @@ import json
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 from app.mcp_batch.jobs import get_available_types
 from app.mcp_batch.queue import JobQueue
 from app.mcp_batch.storage import JobStorage
+
+# Load .env to inherit main server config (AZURE_OPENAI_ENDPOINT, etc.)
+# Batch MCP Server runs as a separate process via stdio, so it does not
+# automatically inherit the main server's environment variables.
+# mcp_servers.json env overrides take precedence (already set in os.environ).
+load_dotenv(override=False)
 
 BATCH_JOBS_DIR = os.environ.get("BATCH_JOBS_DIR", ".jobs")
 
@@ -44,8 +51,10 @@ async def submit_job(job_type: str, params: dict | None = None) -> str:
     """Submit a new batch job for async execution.
 
     Args:
-        job_type: Type of job to run. Available: sleep.
-        params: Job-specific parameters (e.g., {"duration": 60} for sleep).
+        job_type: Type of job to run. Available: sleep, rag-ingest.
+        params: Job-specific parameters.
+            sleep: {"duration": 60}
+            rag-ingest: {"file_path": ".uploads/thread/file.pdf", "collection": "default", "chunk_size": 800, "chunk_overlap": 200}
 
     Returns:
         JSON with job id, type, and status.
@@ -189,4 +198,18 @@ def _build_summary(jobs: list) -> dict:
 
 
 if __name__ == "__main__":
+    # stdio MCP servers cannot use stdout/stderr for logging because
+    # MAF SDK uses them for JSON-RPC communication. Log to a file instead.
+    # Log file is placed next to BATCH_JOBS_DIR for easy access.
+    import logging
+
+    log_file = Path(BATCH_JOBS_DIR).parent / "batch-server.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-5s %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.FileHandler(log_file, encoding="utf-8")],
+        force=True,
+    )
+    logging.getLogger(__name__).info("Batch MCP Server starting (log: %s)", log_file)
     mcp.run()

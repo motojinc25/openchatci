@@ -47,3 +47,9 @@ mcp_servers.json
 
 # Batch Jobs
 .jobs/
+
+# ChromaDB
+.chroma/
+
+# Batch server log (stdio MCP cannot use stdout)
+batch-server.log

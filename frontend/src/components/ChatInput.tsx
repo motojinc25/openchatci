@@ -1,6 +1,7 @@
-import { FileText, Loader2, Mic, Paperclip, Plus, SendHorizonal, Square } from 'lucide-react'
+import { File, FileText, Loader2, Mic, Paperclip, Plus, SendHorizonal, Square } from 'lucide-react'
 import { forwardRef, type KeyboardEvent, useCallback, useImperativeHandle, useRef, useState } from 'react'
 import { ImageThumbnails } from '@/components/ImageThumbnails'
+import { PdfFileCard } from '@/components/PdfFileCard'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { WaveformVisualizer } from '@/components/WaveformVisualizer'
@@ -44,6 +45,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const pdfInputRef = useRef<HTMLInputElement>(null)
 
   useImperativeHandle(ref, () => ({
     insertText: (text: string) => {
@@ -110,6 +112,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     fileInputRef.current?.click()
   }
 
+  const handlePdfSelect = () => {
+    pdfInputRef.current?.click()
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0 && onAddFiles) {
@@ -135,7 +141,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-background'
                 : 'ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
             )}>
-            {onRemoveAttachment && <ImageThumbnails attachments={attachments} onRemove={onRemoveAttachment} />}
+            {onRemoveAttachment && (
+              <>
+                <ImageThumbnails
+                  attachments={attachments.filter((a) => a.mediaType !== 'application/pdf')}
+                  onRemove={onRemoveAttachment}
+                />
+                {attachments.filter((a) => a.mediaType === 'application/pdf').length > 0 && (
+                  <div className="flex flex-wrap gap-2 px-3 pt-2">
+                    {attachments
+                      .filter((a) => a.mediaType === 'application/pdf')
+                      .map((a) => (
+                        <PdfFileCard
+                          key={a.id}
+                          filename={a.file.name}
+                          size={a.file.size}
+                          status={a.status}
+                          onRemove={() => onRemoveAttachment(a.id)}
+                        />
+                      ))}
+                  </div>
+                )}
+              </>
+            )}
             <div className="flex items-end">
               {onAddFiles && (
                 <>
@@ -143,6 +171,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                     ref={fileInputRef}
                     type="file"
                     accept="image/jpeg,image/png,image/gif,image/webp"
+                    multiple
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  <input
+                    ref={pdfInputRef}
+                    type="file"
+                    accept="application/pdf"
                     multiple
                     onChange={handleFileChange}
                     className="hidden"
@@ -165,6 +201,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                         <DropdownMenuItem onClick={handleFileSelect}>
                           <Paperclip className="mr-2 h-4 w-4" />
                           Attach image
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handlePdfSelect}>
+                          <File className="mr-2 h-4 w-4" />
+                          Attach PDF
                         </DropdownMenuItem>
                         {onOpenTemplates && (
                           <DropdownMenuItem onClick={onOpenTemplates}>

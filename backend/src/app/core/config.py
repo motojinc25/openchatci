@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     # Prompt Templates (CTR-0046, PRP-0026)
     templates_dir: str = ".templates"
 
+    # RAG Pipeline (CTR-0075, PRP-0037)
+    chroma_dir: str = ".chroma"
+    rag_collection_name: str = "default"
+    rag_top_k: int = 5
+
     # MCP Integration (CTR-0059, PRP-0031)
     mcp_config_file: str = ""
 

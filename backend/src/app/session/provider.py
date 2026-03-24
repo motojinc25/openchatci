@@ -135,6 +135,10 @@ class FileHistoryProvider(BaseHistoryProvider):
                     continue
                 uri = content_dict.get("uri", "")
                 media_type = content_dict.get("media_type", "")
+                # Skip non-image files (e.g., PDFs uploaded for RAG ingestion).
+                # Azure OpenAI Responses API only accepts image/* content types.
+                if not media_type.startswith("image/"):
+                    continue
                 if uri.startswith("/api/uploads/"):
                     # Local upload: /api/uploads/{thread_id}/{filename}
                     parts = uri.split("/")  # ["", "api", "uploads", thread_id, filename]

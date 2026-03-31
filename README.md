@@ -62,6 +62,7 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 - Per-turn token usage display
 - OpenAI-compatible API: expose agent as `/v1/responses` endpoint for external apps via OpenAI SDK
 - HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
+- Multilingual chat with browser auto-translation suppressed
 - Three layout scenarios: Chat, Popup, Sidebar
 
 ---
@@ -340,7 +341,7 @@ Create a `mcp_servers.json` file (see `backend/mcp_servers.sample.json`):
 - **stdio** servers (with `command`): OpenChatCi spawns the process and communicates via stdin/stdout
 - **HTTP/SSE** servers (with `url`): OpenChatCi connects to a running remote server
 - MCP tools appear alongside built-in tools (Weather, Coding, Image Generation)
-- Tool calls display with a **Plug** icon indicator in the chat
+- Tool calls display with categorized icons: built-in tools have dedicated icons, Skills tools show **BookOpen**/**FileText**, MCP tools show **Plug**
 - Server lifecycle managed automatically (startup/shutdown with zombie process prevention)
 - Reuse your existing Claude Desktop / Claude Code / Cursor MCP configurations
 

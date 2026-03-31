@@ -1,9 +1,11 @@
 import {
+  BookOpen,
   Calendar,
   ChevronRight,
   Cloud,
   File,
   FilePen,
+  FileText,
   FolderSearch,
   Globe,
   ImagePlus,
@@ -37,6 +39,10 @@ const toolDisplayNames: Record<string, { label: string; doneLabel: string; icon:
   file_grep: { label: 'Searching content...', doneLabel: 'Searched content', icon: Search },
   generate_image: { label: 'Generating image...', doneLabel: 'Generated image', icon: ImagePlus },
   edit_image: { label: 'Editing image...', doneLabel: 'Edited image', icon: Pencil },
+  rag_search: { label: 'Searching documents...', doneLabel: 'Searched documents', icon: Search },
+  // Skills tools (MAF SkillsProvider)
+  load_skill: { label: 'Loading skill...', doneLabel: 'Loaded skill', icon: BookOpen },
+  read_skill_resource: { label: 'Reading resource...', doneLabel: 'Read resource', icon: FileText },
 }
 
 function formatJson(raw: string): string {

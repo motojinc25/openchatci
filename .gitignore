@@ -53,3 +53,6 @@ mcp_servers.json
 
 # Batch server log (stdio MCP cannot use stdout)
 batch-server.log
+
+# Archived uploads
+.archived_uploads

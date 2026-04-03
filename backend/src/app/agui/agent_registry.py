@@ -2,14 +2,14 @@
 
 Maintains one Agent instance per configured deployment name.
 All agents share the same Tools, Skills, MCP tools, and context_providers.
-Only the underlying AzureOpenAIResponsesClient differs.
+Only the underlying OpenAIChatClient differs.
 """
 
 import logging
 from typing import Any
 
 from agent_framework import Agent
-from agent_framework.azure import AzureOpenAIResponsesClient
+from agent_framework_openai import OpenAIChatClient
 from azure.identity import AzureCliCredential
 
 from app.core.config import settings
@@ -33,10 +33,10 @@ class AgentRegistry:
         credential = AzureCliCredential()
 
         for model in settings.model_list:
-            client = AzureOpenAIResponsesClient(
+            client = OpenAIChatClient(
+                model=model,
                 credential=credential,
-                endpoint=settings.azure_openai_endpoint or None,
-                deployment_name=model,
+                azure_endpoint=settings.azure_openai_endpoint or None,
             )
 
             # Per-model reasoning effort (CTR-0069):

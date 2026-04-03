@@ -74,13 +74,13 @@ def create_agent_registry() -> AgentRegistry:
     """
     # Web search tool requires a client -- use the default model's client to obtain it.
     # The tool object itself is model-agnostic (it calls a separate search service).
-    from agent_framework.azure import AzureOpenAIResponsesClient
+    from agent_framework_openai import OpenAIChatClient
     from azure.identity import AzureCliCredential
 
-    _temp_client = AzureOpenAIResponsesClient(
+    _temp_client = OpenAIChatClient(
+        model=settings.default_model,
         credential=AzureCliCredential(),
-        endpoint=settings.azure_openai_endpoint or None,
-        deployment_name=settings.default_model,
+        azure_endpoint=settings.azure_openai_endpoint or None,
     )
     web_search_tool = _temp_client.get_web_search_tool(
         user_location={"type": "approximate", "country": settings.web_search_country},

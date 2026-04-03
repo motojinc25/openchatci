@@ -1,6 +1,6 @@
 """File-based session history provider (CTR-0014).
 
-Extends MAF's BaseHistoryProvider to persist conversation history
+Extends MAF's HistoryProvider to persist conversation history
 as JSON files in the .sessions/ directory. Each session is keyed
 by the AG-UI thread_id (accessed via session.metadata["ag_ui_thread_id"]).
 """
@@ -11,15 +11,21 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from agent_framework import AgentSession, Content, Message, SupportsAgentRun
-from agent_framework._sessions import BaseHistoryProvider, SessionContext
+from agent_framework import (
+    AgentSession,
+    Content,
+    HistoryProvider,
+    Message,
+    SessionContext,
+    SupportsAgentRun,
+)
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class FileHistoryProvider(BaseHistoryProvider):
+class FileHistoryProvider(HistoryProvider):
     """Persists conversation history to JSON files."""
 
     def __init__(self, sessions_dir: Path) -> None:

@@ -1,22 +1,25 @@
 # OpenChatCi
 
-**Hawaii-built, localhost-first AI agent platform** powered by [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
+**The localhost AI Agent Runtime** -- Chat UI, Tools, RAG, and MCP in one `pip install`
 
-OpenChatCi is a **local AI agent runtime and UI** that connects modern agent frameworks through the **AG-UI protocol**.
+[![PyPI](https://img.shields.io/pypi/v/openchatci)](https://pypi.org/project/openchatci/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE.md)
+[![Python](https://img.shields.io/pypi/pyversions/openchatci)](https://pypi.org/project/openchatci/)
 
-Run powerful AI agents **directly on localhost** with a modern UI, streaming responses, and tool integrations.
+OpenChatCi is a **full-stack AI agent runtime** that runs entirely on localhost. It connects a modern chat UI to AI agents via the AG-UI protocol, with built-in tools, RAG pipeline, MCP integration, and an OpenAI-compatible API -- all from a single `pip install`.
+
+### Why OpenChatCi?
+
+- **One command, full stack** -- `pip install openchatci` gives you Chat UI + Agent Runtime + Tools + RAG. No Docker, no cloud setup.
+- **MCP native** -- Claude Desktop-compatible config. Connect any MCP server. MCP Apps render interactive UI in chat.
+- **Your data stays local** -- File-based sessions, ChromaDB vectors, and uploads never leave your machine.
+- **OpenAI-compatible API** -- Expose your agent as `/v1/responses` for any app using the OpenAI SDK.
+
+> Hawaii-built, powered by [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
 
 ---
 
-## 🌊 Architecture
-
-The platform connects the UI and agent runtime through the AG-UI protocol.
-
-<p align="center">
-<img src="assets/images/diagram1.jpg">
-</p>
-
-## 🏝 UI Preview
+## UI Preview
 
 <p align="center">
 <img src="assets/images/screenshot1.png">
@@ -24,7 +27,7 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 <img src="assets/images/screenshot3.png">
 </p>
 <p align="center">
-<sub>Weather Tools · Mermaid Diagrams · Image Analysis</sub>
+<sub>Weather Tools | Mermaid Diagrams | Image Analysis</sub>
 </p>
 <p align="center">
 <img src="assets/images/screenshot4.png">
@@ -32,42 +35,12 @@ The platform connects the UI and agent runtime through the AG-UI protocol.
 <img src="assets/images/screenshot6.png">
 </p>
 <p align="center">
-<sub>DevUI · Search Session · Image generation</sub>
+<sub>DevUI | Search Session | Image Generation</sub>
 </p>
 
 ---
 
-## ✨ Features
-
-- Chat with AI agents via AG-UI protocol (SSE streaming)
-- Rich message rendering: Markdown, code blocks, math (KaTeX), Mermaid diagrams
-- LLM reasoning visualization with collapsible thinking blocks
-- Web search with inline citation links
-- Voice input via microphone with Whisper transcription
-- Text-to-Speech playback and download via ElevenLabs
-- Multimodal image analysis (file attachment, drag-and-drop, URL)
-- Image generation, editing, and Canvas mask editor via Azure OpenAI gpt-image-1.5
-- Weather tools with rich card widgets (Open-Meteo, no API key)
-- Coding tools (file read/write, shell execution, file search)
-- Prompt Templates: save, manage, and insert reusable prompts from "+" menu and message actions
-- Agent Skills: portable domain knowledge packages with progressive disclosure
-- MCP Integration: connect external tools via Model Context Protocol (Claude Desktop-compatible config)
-- MCP Apps: interactive UI rendered in sandboxed iframes for MCP tools with `_meta.ui` resources
-- RAG Pipeline: PDF ingestion with ChromaDB vector search, Azure OpenAI embedding, and source citations
-- Batch Processing: async job queue via Core MCP Server with real-time MCP Apps dashboard
-- Multi-model switching: switch between OpenAI models mid-conversation with per-model reasoning and context window
-- Session management: save, search, pin, archive, fork, rename
-- Background Responses: long-running agent timeout prevention with stream resumption
-- Context window consumption display with warning levels
-- Per-turn token usage display
-- OpenAI-compatible API: expose agent as `/v1/responses` endpoint for external apps via OpenAI SDK
-- HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
-- Multilingual chat with browser auto-translation suppressed
-- Three layout scenarios: Chat, Popup, Sidebar
-
----
-
-## 🚀 Quick Start (pip install)
+## Quick Start
 
 ```bash
 pip install openchatci
@@ -77,15 +50,59 @@ az login
 openchatci
 ```
 
-Open:
-
-```
-http://localhost:8000/chat
-```
+Open: [http://localhost:8000/chat](http://localhost:8000/chat)
 
 ---
 
-## 🧑‍💻 Development Setup
+## Features
+
+### Chat & UI
+
+- Chat with AI agents via AG-UI protocol (SSE streaming)
+- Rich message rendering: Markdown, code blocks, math (KaTeX), Mermaid diagrams
+- LLM reasoning visualization with collapsible thinking blocks
+- Web search with inline citation links
+- Voice input via microphone with Whisper transcription
+- Text-to-Speech playback and download via ElevenLabs
+- Multimodal image analysis (file attachment, drag-and-drop, URL)
+- Session management: save, search, pin, archive, fork, rename
+- Context window consumption display with warning levels
+- Per-turn token usage display
+- Three layout scenarios: Chat, Popup, Sidebar
+- Multilingual chat with browser auto-translation suppressed
+
+### Agent Tools
+
+- Image generation, editing, and Canvas mask editor via Azure OpenAI gpt-image-1.5
+- Weather tools with rich card widgets (Open-Meteo, no API key)
+- Coding tools (file read/write, shell execution, file search)
+- Prompt Templates: save, manage, and insert reusable prompts
+- Agent Skills: portable domain knowledge packages with progressive disclosure
+
+### Platform
+
+- MCP Integration: connect external tools via Model Context Protocol (Claude Desktop-compatible config)
+- MCP Apps: interactive UI rendered in sandboxed iframes for MCP tools with `_meta.ui` resources
+- RAG Pipeline: PDF ingestion with ChromaDB vector search, Azure OpenAI embedding, and source citations
+- Batch Processing: async job queue via Core MCP Server with real-time MCP Apps dashboard
+- Multi-model switching: switch between OpenAI models mid-conversation
+- Background Responses: long-running agent timeout prevention with stream resumption
+- OpenAI-compatible API: expose agent as `/v1/responses` endpoint for external apps via OpenAI SDK
+- HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
+
+---
+
+## Architecture
+
+The platform connects the UI and agent runtime through the AG-UI protocol.
+
+<p align="center">
+<img src="assets/images/diagram1.jpg">
+</p>
+
+---
+
+## Development Setup
 
 ### Prerequisites
 
@@ -211,7 +228,7 @@ openchatci --version                      Show version
 
 ---
 
-## 🧰 Tech Stack
+## Tech Stack
 
 | Layer    | Technology                   | Purpose                        |
 | -------- | ---------------------------- | ------------------------------ |
@@ -303,10 +320,10 @@ Place `SKILL.md` files in subdirectories. The agent discovers and loads skills o
 ```
 .skills/
   my-skill/
-  ├── SKILL.md          # Required: instructions + metadata
-  ├── scripts/          # Optional: executable code
-  ├── references/       # Optional: documentation
-  └── assets/           # Optional: templates, resources
+  +-- SKILL.md          # Required: instructions + metadata
+  +-- scripts/          # Optional: executable code
+  +-- references/       # Optional: documentation
+  +-- assets/           # Optional: templates, resources
 ```
 
 Skills use progressive disclosure to minimize context window consumption (~100 tokens per skill when idle).

@@ -1,11 +1,19 @@
 [project]
 name = "openchatci"
-version = "0.39.0"
-description = "Hawaii-built localhost-first AI agent platform powered by Microsoft Agent Framework."
+version = "0.40.0"
+description = "The localhost AI Agent Runtime -- Chat UI, Tools, RAG, and MCP in one pip install."
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Jingun Jung" }]
 requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Framework :: FastAPI",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",

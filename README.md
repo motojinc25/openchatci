@@ -88,6 +88,7 @@ Open: [http://localhost:8000/chat](http://localhost:8000/chat)
 - Multi-model switching: switch between OpenAI models mid-conversation
 - Background Responses: long-running agent timeout prevention with stream resumption
 - OpenAI-compatible API: expose agent as `/v1/responses` endpoint for external apps via OpenAI SDK
+- CLI Client: chat, session/template/model management, TTS, upload from the command line
 - HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
 
 ---
@@ -214,6 +215,8 @@ The backend serves both frontend build artifacts and the API at [http://localhos
 
 ## CLI Usage
 
+### Server Commands
+
 ```
 openchatci                                Start the server
 openchatci init                           Generate .env from template
@@ -224,6 +227,53 @@ openchatci --skip-auth-check              Skip Azure CLI login check
 openchatci --ssl-certfile cert.pem \
            --ssl-keyfile key.pem          Enable HTTPS (LAN access)
 openchatci --version                      Show version
+```
+
+### Client Commands
+
+Interact with a running OpenChatCi instance from the command line. All client commands support `--json` for machine-readable output and `--base-url` / `--api-key` for remote server access.
+
+```bash
+# Chat with the agent (single-shot)
+openchatci chat "What is the weather in Tokyo?"
+
+# Interactive chat (REPL mode)
+openchatci chat -i
+
+# Chat with specific model and session
+openchatci chat "hello" -m gpt-4o -s <session-id>
+
+# Session management
+openchatci sessions list
+openchatci sessions get <id> --messages
+openchatci sessions delete <id>
+openchatci sessions export <id> -o backup.json
+
+# Template management
+openchatci templates list
+openchatci templates create -n "Bug Report" -c "Describe the bug..."
+
+# Model info
+openchatci models list
+
+# Text-to-Speech
+openchatci tts "Hello world" -o greeting.mp3
+
+# File upload
+openchatci upload document.pdf -s <session-id>
+
+# JSON output for scripting / agent-to-agent
+openchatci sessions list --json | jq '.[].thread_id'
+
+# Remote server with HTTPS (self-signed cert)
+openchatci sessions list --base-url https://192.168.1.10:8000 --no-verify
+```
+
+Environment variables for client configuration:
+
+```
+OPENCHATCI_URL=http://localhost:8000       # Default server URL
+OPENCHATCI_API_KEY=sk-your-key             # Bearer token (reuses API_KEY if not set)
 ```
 
 ---

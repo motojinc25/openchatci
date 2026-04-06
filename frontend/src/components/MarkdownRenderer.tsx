@@ -245,12 +245,14 @@ function preprocessMath(text: string): string {
 
 export function MarkdownRenderer({ content }: MarkdownRendererProps) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[[rehypeKatex, { throwOnError: false, trust: true, strict: false }]]}
-      remarkRehypeOptions={remarkRehypeOptions}
-      components={components}>
-      {preprocessMath(content)}
-    </ReactMarkdown>
+    <div className="[&>*:last-child]:mb-0">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[[rehypeKatex, { throwOnError: false, trust: true, strict: false }]]}
+        remarkRehypeOptions={remarkRehypeOptions}
+        components={components}>
+        {preprocessMath(content)}
+      </ReactMarkdown>
+    </div>
   )
 }

@@ -2389,7 +2389,7 @@ wheels = [
 
 [[package]]
 name = "openchatci"
-version = "0.40.0"
+version = "0.41.0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-framework" },
@@ -2400,6 +2400,7 @@ dependencies = [
     { name = "elevenlabs" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "httpx-sse" },
     { name = "pydantic-settings" },
     { name = "pymupdf" },
     { name = "python-dotenv" },
@@ -2424,6 +2425,7 @@ requires-dist = [
     { name = "elevenlabs", specifier = ">=2.39.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.0" },
+    { name = "httpx-sse", specifier = ">=0.4.0" },
     { name = "pydantic-settings", specifier = ">=2.9.0" },
     { name = "pymupdf", specifier = ">=1.25.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },

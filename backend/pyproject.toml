@@ -1,6 +1,6 @@
 [project]
 name = "openchatci"
-version = "0.40.0"
+version = "0.41.0"
 description = "The localhost AI Agent Runtime -- Chat UI, Tools, RAG, and MCP in one pip install."
 readme = "README.md"
 license = "Apache-2.0"
@@ -27,6 +27,7 @@ dependencies = [
     "elevenlabs>=2.39.0",
     "chromadb>=1.0.0",
     "pymupdf>=1.25.0",
+    "httpx-sse>=0.4.0",
 ]
 
 [project.urls]

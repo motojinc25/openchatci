@@ -17,6 +17,19 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.session.storage import (
+    FOLDER_NAME_MAX_LENGTH,
+    create_folder_record,
+    ensure_session_defaults,
+    read_folder_index,
+    read_session_json,
+    session_path,
+    sessions_dir,
+    touch_folder_record,
+    write_folder_index,
+    write_json_atomic,
+    write_session_json,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +37,7 @@ router = APIRouter(prefix="/api/sessions", tags=["Sessions"])
 
 
 def _sessions_dir() -> Path:
-    return Path(settings.sessions_dir)
+    return sessions_dir()
 
 
 _IMAGE_GEN_TOOLS = frozenset({"generate_image", "edit_image"})
@@ -58,7 +71,7 @@ def _archived_dir() -> Path:
 def _read_session_metadata(path: Path) -> dict[str, Any] | None:
     """Read session file and return metadata (without full messages)."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = ensure_session_defaults(json.loads(path.read_text(encoding="utf-8")))
         return {
             "thread_id": data.get("thread_id", path.stem),
             "title": data.get("title", ""),
@@ -67,6 +80,7 @@ def _read_session_metadata(path: Path) -> dict[str, Any] | None:
             "message_count": data.get("message_count", 0),
             "image_count": data.get("image_count", 0),
             "pinned_at": data.get("pinned_at"),
+            "folder_id": data.get("folder_id"),
             "source": data.get("source", "ag-ui"),
         }
     except (json.JSONDecodeError, OSError):
@@ -100,11 +114,108 @@ async def init_session(thread_id: str, body: InitSessionRequest) -> dict[str, An
         "updated_at": now,
         "message_count": 0,
         "image_count": 0,
+        "folder_id": None,
         "messages": [],
     }
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_session_json(thread_id, data)
     logger.info("Initialized session %s", thread_id)
     return {"status": "created", "thread_id": thread_id}
+
+
+class CreateFolderRequest(BaseModel):
+    name: str
+
+
+class AssignFolderRequest(BaseModel):
+    folder_id: str | None = None
+
+
+def _read_folder_records() -> list[dict[str, Any]]:
+    """Read folder registry or raise a HTTP 500 on corruption."""
+    try:
+        return read_folder_index()
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        raise HTTPException(status_code=500, detail="Failed to read folder registry") from e
+
+
+def _read_session_or_404(thread_id: str) -> dict[str, Any]:
+    """Read session JSON or raise HTTP errors."""
+    try:
+        data = read_session_json(thread_id)
+    except (OSError, json.JSONDecodeError) as e:
+        raise HTTPException(status_code=500, detail="Failed to read session") from e
+    if data is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return data
+
+
+def _write_session_or_500(thread_id: str, data: dict[str, Any]) -> None:
+    """Persist session JSON or raise HTTP errors."""
+    try:
+        write_session_json(thread_id, data)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail="Failed to write session") from e
+
+
+@router.get("/folders")
+async def list_folders() -> list[dict[str, Any]]:
+    """List all folder records."""
+    folders = _read_folder_records()
+    folders.sort(key=lambda folder: folder.get("updated_at", ""), reverse=True)
+    return folders
+
+
+@router.post("/folders")
+async def create_folder(body: CreateFolderRequest) -> dict[str, Any]:
+    """Create a new folder record."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Folder name cannot be empty")
+    if len(name) > FOLDER_NAME_MAX_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Folder name must be {FOLDER_NAME_MAX_LENGTH} characters or fewer",
+        )
+
+    try:
+        folder = create_folder_record(name)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail="Failed to create folder") from e
+    logger.info("Created folder %s", folder["id"])
+    return folder
+
+
+@router.delete("/folders/{folder_id}")
+async def delete_folder(folder_id: str) -> dict[str, Any]:
+    """Delete a folder and unassign all linked sessions."""
+    folders = _read_folder_records()
+    if folder_id not in {folder["id"] for folder in folders}:
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    for base_dir in (_sessions_dir(), _archived_dir()):
+        if not base_dir.is_dir():
+            continue
+        for file in base_dir.glob("*.json"):
+            try:
+                data = ensure_session_defaults(json.loads(file.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError) as e:
+                raise HTTPException(status_code=500, detail="Failed to read session") from e
+            if data.get("folder_id") != folder_id:
+                continue
+            data["folder_id"] = None
+            data["updated_at"] = datetime.now(UTC).isoformat()
+            try:
+                write_json_atomic(file, data)
+            except OSError as e:
+                raise HTTPException(status_code=500, detail="Failed to write session") from e
+
+    try:
+        write_folder_index([folder for folder in folders if folder.get("id") != folder_id])
+    except OSError as e:
+        raise HTTPException(status_code=500, detail="Failed to delete folder") from e
+
+    logger.info("Deleted folder %s", folder_id)
+    return {"status": "deleted", "folder_id": folder_id}
 
 
 @router.get("")
@@ -140,7 +251,7 @@ async def search_sessions(q: str = "") -> list[dict[str, Any]]:
 
     for file in sessions_path.glob("*.json"):
         try:
-            data = json.loads(file.read_text(encoding="utf-8"))
+            data = ensure_session_defaults(json.loads(file.read_text(encoding="utf-8")))
         except (json.JSONDecodeError, OSError):
             continue
 
@@ -179,6 +290,7 @@ async def search_sessions(q: str = "") -> list[dict[str, Any]]:
                     "message_count": data.get("message_count", 0),
                     "image_count": data.get("image_count", 0),
                     "pinned_at": data.get("pinned_at"),
+                    "folder_id": data.get("folder_id"),
                     "snippet": snippet,
                 }
             )
@@ -190,14 +302,29 @@ async def search_sessions(q: str = "") -> list[dict[str, Any]]:
 @router.get("/{thread_id}")
 async def get_session(thread_id: str) -> dict[str, Any]:
     """Get a session with its messages."""
-    path = _sessions_dir() / f"{thread_id}.json"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Session not found")
+    return _read_session_or_404(thread_id)
 
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail="Failed to read session") from e
+
+@router.patch("/{thread_id}/folder")
+async def assign_session_folder(thread_id: str, body: AssignFolderRequest) -> dict[str, Any]:
+    """Assign or unassign a session to a folder."""
+    data = _read_session_or_404(thread_id)
+
+    if body.folder_id is not None and body.folder_id not in {folder["id"] for folder in _read_folder_records()}:
+        raise HTTPException(status_code=400, detail="Folder not found")
+
+    data["folder_id"] = body.folder_id
+    data["updated_at"] = datetime.now(UTC).isoformat()
+    _write_session_or_500(thread_id, data)
+
+    if body.folder_id:
+        try:
+            touch_folder_record(body.folder_id)
+        except OSError as e:
+            raise HTTPException(status_code=500, detail="Failed to update folder") from e
+
+    logger.info("Assigned session %s to folder %s", thread_id, body.folder_id)
+    return {"status": "updated", "thread_id": thread_id, "folder_id": data["folder_id"]}
 
 
 class ReasoningItem(BaseModel):
@@ -284,14 +411,14 @@ async def save_messages(thread_id: str, body: SaveMessagesRequest) -> dict[str, 
     """
     sessions_path = _sessions_dir()
     sessions_path.mkdir(parents=True, exist_ok=True)
-    path = sessions_path / f"{thread_id}.json"
+    path = session_path(thread_id)
 
     new_message_dicts = [_to_maf_message_dict(m) for m in body.messages]
     now = datetime.now(UTC).isoformat()
 
     if path.is_file():
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = ensure_session_defaults(json.loads(path.read_text(encoding="utf-8")))
         except (json.JSONDecodeError, OSError):
             data = None
     else:
@@ -312,6 +439,7 @@ async def save_messages(thread_id: str, body: SaveMessagesRequest) -> dict[str, 
             "updated_at": now,
             "message_count": len(new_message_dicts),
             "image_count": _count_images(new_message_dicts),
+            "folder_id": None,
             "messages": new_message_dicts,
         }
 
@@ -321,7 +449,7 @@ async def save_messages(thread_id: str, body: SaveMessagesRequest) -> dict[str, 
                 data["title"] = m["contents"][0]["text"][:100]
                 break
 
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_session_or_500(thread_id, data)
     logger.info("Saved %d messages to session %s via API", len(new_message_dicts), thread_id)
     return {"status": "saved", "thread_id": thread_id, "message_count": data["message_count"]}
 
@@ -338,14 +466,7 @@ async def truncate_session(thread_id: str, body: TruncateRequest) -> dict[str, A
     Used for message edit/regenerate: removes messages from
     delete_from onward so the frontend can re-request.
     """
-    path = _sessions_dir() / f"{thread_id}.json"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail="Failed to read session") from e
+    data = _read_session_or_404(thread_id)
 
     messages = data.get("messages", [])
     if body.delete_from < len(messages):
@@ -353,7 +474,7 @@ async def truncate_session(thread_id: str, body: TruncateRequest) -> dict[str, A
         data["message_count"] = len(data["messages"])
         data["image_count"] = _count_images(data["messages"])
         data["updated_at"] = datetime.now(UTC).isoformat()
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        _write_session_or_500(thread_id, data)
         logger.info("Truncated session %s from index %d", thread_id, body.delete_from)
 
     return {"status": "truncated", "thread_id": thread_id, "message_count": data.get("message_count", 0)}
@@ -362,14 +483,7 @@ async def truncate_session(thread_id: str, body: TruncateRequest) -> dict[str, A
 @router.delete("/{thread_id}/messages/{index}")
 async def delete_message(thread_id: str, index: int) -> dict[str, Any]:
     """Delete a single message at the given index from a session."""
-    path = _sessions_dir() / f"{thread_id}.json"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail="Failed to read session") from e
+    data = _read_session_or_404(thread_id)
 
     messages = data.get("messages", [])
     if index < 0 or index >= len(messages):
@@ -380,7 +494,7 @@ async def delete_message(thread_id: str, index: int) -> dict[str, Any]:
     data["message_count"] = len(messages)
     data["image_count"] = _count_images(messages)
     data["updated_at"] = datetime.now(UTC).isoformat()
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_session_or_500(thread_id, data)
     logger.info("Deleted message at index %d from session %s", index, thread_id)
 
     return {"status": "deleted", "thread_id": thread_id, "message_count": len(messages)}
@@ -397,14 +511,7 @@ async def fork_session(thread_id: str, body: ForkRequest) -> dict[str, Any]:
     Creates a new session file containing messages[0:up_to_index+1]
     from the source session. Used by "Branch in new chat" feature.
     """
-    path = _sessions_dir() / f"{thread_id}.json"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail="Failed to read session") from e
+    data = _read_session_or_404(thread_id)
 
     messages = data.get("messages", [])
     forked_messages = messages[: body.up_to_index + 1]
@@ -428,13 +535,13 @@ async def fork_session(thread_id: str, body: ForkRequest) -> dict[str, Any]:
         "updated_at": now,
         "message_count": len(forked_messages),
         "image_count": _count_images(forked_messages),
+        "folder_id": data.get("folder_id"),
         "messages": forked_messages,
     }
 
     sessions_path = _sessions_dir()
     sessions_path.mkdir(parents=True, exist_ok=True)
-    new_path = sessions_path / f"{new_thread_id}.json"
-    new_path.write_text(json.dumps(new_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_session_or_500(new_thread_id, new_data)
     logger.info("Forked session %s -> %s (up to index %d)", thread_id, new_thread_id, body.up_to_index)
 
     return {
@@ -451,18 +558,11 @@ class RenameRequest(BaseModel):
 @router.patch("/{thread_id}/rename")
 async def rename_session(thread_id: str, body: RenameRequest) -> dict[str, Any]:
     """Rename a session title."""
-    path = _sessions_dir() / f"{thread_id}.json"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail="Failed to read session") from e
+    data = _read_session_or_404(thread_id)
 
     data["title"] = body.title.strip()[:100]
     data["updated_at"] = datetime.now(UTC).isoformat()
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_session_or_500(thread_id, data)
     logger.info("Renamed session %s to '%s'", thread_id, data["title"])
 
     return {"status": "renamed", "thread_id": thread_id, "title": data["title"]}
@@ -471,7 +571,7 @@ async def rename_session(thread_id: str, body: RenameRequest) -> dict[str, Any]:
 @router.post("/{thread_id}/archive")
 async def archive_session(thread_id: str) -> dict[str, str]:
     """Archive a session by moving it from .sessions/ to .archived/."""
-    path = _sessions_dir() / f"{thread_id}.json"
+    path = session_path(thread_id)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -502,18 +602,11 @@ class ContinuationTokenRequest(BaseModel):
 @router.patch("/{thread_id}/continuation-token")
 async def update_continuation_token(thread_id: str, body: ContinuationTokenRequest) -> dict[str, Any]:
     """Update continuation_token for background response resumption (CTR-0045, PRP-0025)."""
-    path = _sessions_dir() / f"{thread_id}.json"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail="Failed to read session") from e
+    data = _read_session_or_404(thread_id)
 
     data["continuation_token"] = body.continuation_token
     data["updated_at"] = datetime.now(UTC).isoformat()
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_session_or_500(thread_id, data)
     logger.info(
         "Updated continuation_token for session %s: %s", thread_id, "set" if body.continuation_token else "cleared"
     )
@@ -528,21 +621,14 @@ class PinRequest(BaseModel):
 @router.patch("/{thread_id}/pin")
 async def pin_session(thread_id: str, body: PinRequest) -> dict[str, Any]:
     """Pin or unpin a session."""
-    path = _sessions_dir() / f"{thread_id}.json"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail="Failed to read session") from e
+    data = _read_session_or_404(thread_id)
 
     if body.pinned:
         data["pinned_at"] = datetime.now(UTC).isoformat()
     else:
         data["pinned_at"] = None
 
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_session_or_500(thread_id, data)
     logger.info("Pin session %s: pinned=%s", thread_id, body.pinned)
 
     return {"status": "pinned" if body.pinned else "unpinned", "thread_id": thread_id, "pinned_at": data["pinned_at"]}
@@ -551,7 +637,7 @@ async def pin_session(thread_id: str, body: PinRequest) -> dict[str, Any]:
 @router.delete("/{thread_id}")
 async def delete_session(thread_id: str) -> dict[str, str]:
     """Delete a session file and its uploaded files."""
-    path = _sessions_dir() / f"{thread_id}.json"
+    path = session_path(thread_id)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Session not found")
 

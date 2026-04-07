@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 import uuid
 
-from app.core.config import settings
+from app.session.storage import ensure_session_defaults, read_session_json, sessions_dir, write_session_json
 
 logger = logging.getLogger(__name__)
 
@@ -22,26 +22,21 @@ def generate_response_id() -> str:
 
 
 def _sessions_dir() -> Path:
-    return Path(settings.sessions_dir)
+    return sessions_dir()
 
 
 def _read_session(thread_id: str) -> dict[str, Any] | None:
     """Read session JSON by thread_id."""
-    path = _sessions_dir() / f"{thread_id}.json"
-    if not path.is_file():
-        return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return read_session_json(thread_id)
     except (json.JSONDecodeError, OSError):
-        logger.warning("Failed to read session: %s", path)
+        logger.warning("Failed to read session: %s", thread_id)
         return None
 
 
 def _write_session(thread_id: str, data: dict[str, Any]) -> None:
     """Write session JSON."""
-    path = _sessions_dir() / f"{thread_id}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_session_json(thread_id, data)
 
 
 def resolve_thread_id(previous_response_id: str) -> str | None:
@@ -86,6 +81,7 @@ def create_api_session(thread_id: str, response_id: str, title: str = "") -> dic
         "updated_at": now,
         "message_count": 0,
         "image_count": 0,
+        "folder_id": None,
         "messages": [],
     }
     _write_session(thread_id, data)
@@ -104,6 +100,7 @@ def update_api_session(
     if data is None:
         logger.warning("Session not found for update: %s", thread_id)
         return
+    data = ensure_session_defaults(data)
 
     messages = data.get("messages", [])
     messages.append(user_message)

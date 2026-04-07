@@ -76,7 +76,7 @@ Open: [http://localhost:8000/chat](http://localhost:8000/chat)
 - Image generation, editing, and Canvas mask editor via Azure OpenAI gpt-image-1.5
 - Weather tools with rich card widgets (Open-Meteo, no API key)
 - Coding tools (file read/write, shell execution, file search)
-- Prompt Templates: save, manage, and insert reusable prompts
+- Prompt Templates: save, manage, and insert reusable prompts from "+" menu and message actions
 - Agent Skills: portable domain knowledge packages with progressive disclosure
 
 ### Platform
@@ -85,11 +85,16 @@ Open: [http://localhost:8000/chat](http://localhost:8000/chat)
 - MCP Apps: interactive UI rendered in sandboxed iframes for MCP tools with `_meta.ui` resources
 - RAG Pipeline: PDF ingestion with ChromaDB vector search, Azure OpenAI embedding, and source citations
 - Batch Processing: async job queue via Core MCP Server with real-time MCP Apps dashboard
-- Multi-model switching: switch between OpenAI models mid-conversation
+- Multi-model switching: switch between OpenAI models mid-conversation with per-model reasoning and context window
+- Session management: save, search, organize into folders, pin, archive, fork, rename
 - Background Responses: long-running agent timeout prevention with stream resumption
+- Context window consumption display with warning levels
+- Per-turn token usage display
 - OpenAI-compatible API: expose agent as `/v1/responses` endpoint for external apps via OpenAI SDK
 - CLI Client: chat, session/template/model management, TTS, upload from the command line
 - HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
+- Multilingual chat with browser auto-translation suppressed
+- Three layout scenarios: Chat, Popup, Sidebar
 
 ---
 

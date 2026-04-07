@@ -11,15 +11,22 @@ export function ChatPage() {
   const {
     threadId,
     sessions,
+    folders,
     initialMessages,
     continuationToken,
     isSwitching,
     sidebarOpen,
     setSidebarOpen,
+    isCreatingFolder,
+    deletingFolderId,
+    movingSessionId,
     createSession,
+    createFolder,
     switchSession,
     deleteSession,
+    deleteFolder,
     forkSession,
+    moveSessionToFolder,
     renameSession,
     archiveSession,
     pinSession,
@@ -43,9 +50,16 @@ export function ChatPage() {
       {sidebarOpen && (
         <SessionSidebar
           sessions={sessions}
+          folders={folders}
           currentThreadId={threadId}
+          creatingFolder={isCreatingFolder}
+          deletingFolderId={deletingFolderId}
+          movingSessionId={movingSessionId}
           onSwitch={switchSession}
           onDelete={deleteSession}
+          onDeleteFolder={deleteFolder}
+          onCreateFolder={createFolder}
+          onMoveToFolder={moveSessionToFolder}
           onRename={renameSession}
           onArchive={archiveSession}
           onPin={pinSession}

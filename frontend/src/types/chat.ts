@@ -61,6 +61,13 @@ export interface PromptTemplate {
   updated_at: string
 }
 
+export interface SessionFolder {
+  id: string
+  name: string
+  created_at: string
+  updated_at: string
+}
+
 export interface SessionSummary {
   thread_id: string
   title: string
@@ -69,5 +76,6 @@ export interface SessionSummary {
   message_count: number
   image_count: number
   pinned_at: string | null
+  folder_id: string | null
   source?: 'ag-ui' | 'openai-api'
 }

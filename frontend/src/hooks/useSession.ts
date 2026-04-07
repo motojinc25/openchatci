@@ -5,12 +5,42 @@ import type {
   ChatMessage,
   ImageRef,
   ReasoningBlock,
+  SessionFolder,
   SessionSummary,
   ToolCall,
   UsageInfo,
 } from '@/types/chat'
 
 const STORAGE_KEY = 'openchatci-thread-id'
+
+function normalizeSessionSummaries(data: unknown): SessionSummary[] {
+  if (!Array.isArray(data)) return []
+  return data.map((session) => ({
+    ...(session as SessionSummary),
+    folder_id: (session as SessionSummary).folder_id ?? null,
+  }))
+}
+
+function normalizeFolder(input: unknown): SessionFolder | null {
+  if (!input || typeof input !== 'object') return null
+  const candidate = input as Partial<SessionFolder>
+  if (typeof candidate.id !== 'string' || typeof candidate.name !== 'string') return null
+  return {
+    id: candidate.id,
+    name: candidate.name,
+    created_at: typeof candidate.created_at === 'string' ? candidate.created_at : '',
+    updated_at: typeof candidate.updated_at === 'string' ? candidate.updated_at : '',
+  }
+}
+
+function normalizeFolders(data: unknown): SessionFolder[] {
+  const items = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object' && Array.isArray((data as { folders?: unknown[] }).folders)
+      ? (data as { folders: unknown[] }).folders
+      : []
+  return items.map(normalizeFolder).filter((folder): folder is SessionFolder => folder !== null)
+}
 
 /**
  * Convert MAF Message format to ChatMessage for display.
@@ -101,10 +131,14 @@ export function useSession() {
     return newId
   })
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [folders, setFolders] = useState<SessionFolder[]>([])
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([])
   const [continuationToken, setContinuationToken] = useState<Record<string, unknown> | null>(null)
   const [isSwitching, setIsSwitching] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false)
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null)
+  const [movingSessionId, setMovingSessionId] = useState<string | null>(null)
   const abortRef = useRef<(() => void) | null>(null)
   const switchedRef = useRef(false)
 
@@ -113,22 +147,37 @@ export function useSession() {
     localStorage.setItem(STORAGE_KEY, threadId)
   }, [threadId])
 
-  // Fetch session list
   const refreshSessions = useCallback(async () => {
     try {
       const res = await fetch('/api/sessions')
       if (res.ok) {
-        setSessions(await res.json())
+        setSessions(normalizeSessionSummaries(await res.json()))
       }
     } catch {
       // ignore fetch errors
     }
   }, [])
 
-  // Load session list on mount
+  const refreshFolders = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sessions/folders')
+      if (res.ok) {
+        setFolders(normalizeFolders(await res.json()))
+      } else if (res.status === 404) {
+        setFolders([])
+      }
+    } catch {
+      // ignore fetch errors
+    }
+  }, [])
+
   useEffect(() => {
     refreshSessions()
   }, [refreshSessions])
+
+  useEffect(() => {
+    refreshFolders()
+  }, [refreshFolders])
 
   // Load initial messages when URL has ?session= parameter (page load only).
   // switchSession already loads data before navigating, so skip the re-fetch.
@@ -159,7 +208,6 @@ export function useSession() {
     }
   }, [sessionParam])
 
-  // Register abort function for mid-stream session switch
   const registerAbort = useCallback((abortFn: () => void) => {
     abortRef.current = abortFn
   }, [])
@@ -300,22 +348,130 @@ export function useSession() {
     }
   }, [])
 
+  const createFolder = useCallback(
+    async (name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return false
+
+      const tempFolderId = `temp-${crypto.randomUUID()}`
+      const now = new Date().toISOString()
+      const optimisticFolder: SessionFolder = {
+        id: tempFolderId,
+        name: trimmed,
+        created_at: now,
+        updated_at: now,
+      }
+
+      setIsCreatingFolder(true)
+      setFolders((prev) => [optimisticFolder, ...prev])
+
+      try {
+        const res = await fetch('/api/sessions/folders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: trimmed }),
+        })
+        if (!res.ok) throw new Error('Failed to create folder')
+
+        const payload = await res.json()
+        const folder = normalizeFolder(payload) ?? normalizeFolder((payload as { folder?: unknown }).folder)
+        if (folder) {
+          setFolders((prev) => prev.map((item) => (item.id === tempFolderId ? folder : item)))
+        } else {
+          await refreshFolders()
+        }
+        return true
+      } catch {
+        setFolders((prev) => prev.filter((folder) => folder.id !== tempFolderId))
+        return false
+      } finally {
+        setIsCreatingFolder(false)
+      }
+    },
+    [refreshFolders],
+  )
+
+  const deleteFolder = useCallback(
+    async (folderId: string) => {
+      const previousFolders = folders
+      const previousSessions = sessions
+
+      setDeletingFolderId(folderId)
+      setFolders((prev) => prev.filter((folder) => folder.id !== folderId))
+      setSessions((prev) =>
+        prev.map((session) => (session.folder_id === folderId ? { ...session, folder_id: null } : session)),
+      )
+
+      try {
+        const res = await fetch(`/api/sessions/folders/${folderId}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Failed to delete folder')
+
+        await Promise.all([refreshFolders(), refreshSessions()])
+        return true
+      } catch {
+        setFolders(previousFolders)
+        setSessions(previousSessions)
+        return false
+      } finally {
+        setDeletingFolderId(null)
+      }
+    },
+    [folders, refreshFolders, refreshSessions, sessions],
+  )
+
+  const moveSessionToFolder = useCallback(
+    async (targetThreadId: string, folderId: string | null) => {
+      const previousSessions = sessions
+
+      setMovingSessionId(targetThreadId)
+      setSessions((prev) =>
+        prev.map((session) => (session.thread_id === targetThreadId ? { ...session, folder_id: folderId } : session)),
+      )
+
+      try {
+        const res = await fetch(`/api/sessions/${targetThreadId}/folder`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder_id: folderId }),
+        })
+        if (!res.ok) throw new Error('Failed to move session')
+
+        await Promise.all([refreshFolders(), refreshSessions()])
+        return true
+      } catch {
+        setSessions(previousSessions)
+        return false
+      } finally {
+        setMovingSessionId(null)
+      }
+    },
+    [refreshFolders, refreshSessions, sessions],
+  )
+
   return {
     threadId,
     sessions,
+    folders,
     initialMessages,
     continuationToken,
     isSwitching,
     sidebarOpen,
     setSidebarOpen,
+    isCreatingFolder,
+    deletingFolderId,
+    movingSessionId,
     createSession,
+    createFolder,
     switchSession,
     deleteSession,
+    deleteFolder,
     forkSession,
+    moveSessionToFolder,
     renameSession,
     archiveSession,
     pinSession,
     refreshSessions,
+    refreshFolders,
     registerAbort,
   }
 }

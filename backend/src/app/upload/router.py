@@ -2,7 +2,7 @@
 
 Provides endpoints for uploading images and PDFs, and serving uploaded files.
 Uploaded files are stored in {UPLOAD_DIR}/{thread_id}/{filename}.
-Supports image/* MIME types (20MB limit) and application/pdf (50MB limit).
+Validation policy is shared with CLI preflight checks via app.upload.validation.
 """
 
 import logging
@@ -14,14 +14,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.upload.validation import UploadValidationError, validate_upload_metadata
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Upload"])
-
-ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"}
-MAX_FILE_SIZE_IMAGE = 20 * 1024 * 1024  # 20MB for images
-MAX_FILE_SIZE_PDF = 50 * 1024 * 1024  # 50MB for PDFs
 
 
 def _upload_dir() -> Path:
@@ -35,41 +32,28 @@ class UploadResponse(BaseModel):
 
 
 @router.post("/api/upload/{thread_id}")
-async def upload_image(thread_id: str, file: UploadFile) -> UploadResponse:
-    """Upload an image file for a session."""
-    content_type = file.content_type or ""
-    if content_type not in ALLOWED_MEDIA_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type: {content_type}. Allowed: {', '.join(sorted(ALLOWED_MEDIA_TYPES))}",
-        )
-
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Filename is required")
-
-    # Sanitize filename (prevent path traversal)
-    safe_name = Path(file.filename).name
-    if not safe_name or safe_name.startswith("."):
-        raise HTTPException(status_code=400, detail="Invalid filename")
-
-    max_size = MAX_FILE_SIZE_PDF if content_type == "application/pdf" else MAX_FILE_SIZE_IMAGE
+async def upload_file(thread_id: str, file: UploadFile) -> UploadResponse:
+    """Upload a supported file for a session."""
     data = await file.read()
-    if len(data) > max_size:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {max_size // (1024 * 1024)}MB",
-        )
+    try:
+        validated = validate_upload_metadata(file.filename, file.content_type or "", len(data))
+    except UploadValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Save to {UPLOAD_DIR}/{thread_id}/{filename}
     dest_dir = _upload_dir() / thread_id
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / safe_name
+    dest_path = dest_dir / validated.safe_filename
     dest_path.write_bytes(data)
 
-    uri = f"/api/uploads/{thread_id}/{safe_name}"
-    logger.info("Uploaded %s (%d bytes) to %s", safe_name, len(data), dest_path)
+    uri = f"/api/uploads/{thread_id}/{validated.safe_filename}"
+    logger.info("Uploaded %s (%d bytes) to %s", validated.safe_filename, len(data), dest_path)
 
-    return UploadResponse(uri=uri, media_type=content_type, filename=safe_name)
+    return UploadResponse(
+        uri=uri,
+        media_type=validated.content_type,
+        filename=validated.safe_filename,
+    )
 
 
 @router.get("/api/uploads/{thread_id}/{filename}")

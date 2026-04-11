@@ -91,7 +91,7 @@ Open: [http://localhost:8000/chat](http://localhost:8000/chat)
 - Context window consumption display with warning levels
 - Per-turn token usage display
 - OpenAI-compatible API: expose agent as `/v1/responses` endpoint for external apps via OpenAI SDK
-- CLI Client: chat, session/template/model management, TTS, upload from the command line
+- CLI Client: chat, session/template/model management, TTS, and upload from the command line with local preflight validation for filename, MIME type, and size
 - HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
 - Multilingual chat with browser auto-translation suppressed
 - Three layout scenarios: Chat, Popup, Sidebar
@@ -273,6 +273,8 @@ openchatci sessions list --json | jq '.[].thread_id'
 # Remote server with HTTPS (self-signed cert)
 openchatci sessions list --base-url https://192.168.1.10:8000 --no-verify
 ```
+
+`openchatci upload` validates the local file before sending the request: the file must exist, the sanitized filename must remain valid, the MIME type must be one of the supported image formats or PDF, and the size limit must stay within 20MB for images or 50MB for PDFs.
 
 Environment variables for client configuration:
 

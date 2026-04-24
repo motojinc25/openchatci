@@ -1,4 +1,4 @@
-"""Agent factory for Multi-Model Agent Registry (CTR-0026, CTR-0070, PRP-0035).
+"""Agent factory for Multi-Model Agent Registry (CTR-0026, CTR-0070, PRP-0035, PRP-0046).
 
 Creates an AgentRegistry maintaining one Agent instance per configured
 deployment name. All agents share the same Tools, Skills, MCP tools,
@@ -8,12 +8,21 @@ Weather tools (CTR-0027, PRP-0017) are registered as AI functions.
 Coding tools (CTR-0031, CTR-0032, PRP-0019) are conditionally registered.
 Agent Skills (CTR-0043, PRP-0024) are conditionally loaded via SkillsProvider.
 MCP tools (CTR-0060, PRP-0031) are dynamically loaded from config file.
+
+PRP-0046 adds ``include_mcp`` / ``include_rag`` parameters so that DevUI,
+which runs in a separate asyncio event loop on a daemon thread, can
+construct an agent that does not share MCP tool async contexts or the
+ChromaDB client with the main FastAPI loop.
 """
 
 import logging
 from pathlib import Path
 import platform
 from typing import Any
+
+from agent_framework import Agent
+from agent_framework_openai import OpenAIChatClient
+from azure.identity import AzureCliCredential
 
 from app.agui.agent_registry import AgentRegistry
 from app.core.config import settings
@@ -67,14 +76,20 @@ def _validate_coding_config() -> None:
         raise ValueError(msg)
 
 
-def create_agent_registry() -> AgentRegistry:
-    """Create the AgentRegistry with one Agent per configured model (CTR-0070).
+def _build_tools_and_instructions(
+    *,
+    include_mcp: bool,
+    include_rag: bool,
+) -> tuple[list[Any], list[Any], str]:
+    """Assemble (tools, context_providers, instructions) from current settings.
 
-    Replaces the former create_agent() single-instance pattern.
+    PRP-0046 introduces the ``include_mcp`` / ``include_rag`` flags so
+    DevUI can build an agent without the loop-bound MCP tools and
+    ChromaDB-backed rag_search tool.
     """
-    from agent_framework_openai import OpenAIChatClient
+    from agent_framework_openai import OpenAIChatClient as _OpenAIChatClient  # local alias for static method
 
-    web_search_tool = OpenAIChatClient.get_web_search_tool(
+    web_search_tool = _OpenAIChatClient.get_web_search_tool(
         user_location={"type": "approximate", "country": settings.web_search_country},
     )
 
@@ -82,9 +97,6 @@ def create_agent_registry() -> AgentRegistry:
         sessions_dir=Path(settings.sessions_dir),
     )
 
-    # NOTE: reasoning_effort is resolved per-model in AgentRegistry (CTR-0069)
-
-    # Base tools and instructions
     tools: list[Any] = [web_search_tool, get_coords_by_city, get_current_weather_by_coords, get_weather_next_week]
     instructions = (
         "You are a helpful AI assistant. "
@@ -111,8 +123,8 @@ def create_agent_registry() -> AgentRegistry:
             settings.coding_max_turns,
         )
 
-    # RAG Search tool (CTR-0077, PRP-0037)
-    if settings.chroma_dir:
+    # RAG Search tool (CTR-0077, PRP-0037) -- excluded when include_rag=False
+    if include_rag and settings.chroma_dir:
         try:
             from app.rag.tools import init_rag_search, rag_search
 
@@ -160,22 +172,23 @@ def create_agent_registry() -> AgentRegistry:
         )
         logger.info("Image generation tools enabled (deployment=%s)", settings.image_deployment_name)
 
-    # MCP tools (CTR-0060, PRP-0031)
-    mcp_tools = get_mcp_tools()
-    if mcp_tools:
-        tools.extend(mcp_tools)
-        mcp_server_names = get_mcp_server_names()
-        servers_list = ", ".join(mcp_server_names)
-        instructions += (
-            f" You have MCP (Model Context Protocol) tools available from the following "
-            f"connected servers: {servers_list}. "
-            "When the user's request can be fulfilled by an MCP tool, ALWAYS prefer "
-            "using the MCP tool over web search or other built-in tools. "
-            "MCP tools provide direct, structured access to external services and "
-            "are more reliable than general web search for their specific domains. "
-            "After using an MCP tool, summarize the result clearly for the user."
-        )
-        logger.info("MCP tools added to agent: %d tool(s) from servers: %s", len(mcp_tools), servers_list)
+    # MCP tools (CTR-0060, PRP-0031) -- excluded when include_mcp=False
+    if include_mcp:
+        mcp_tools = get_mcp_tools()
+        if mcp_tools:
+            tools.extend(mcp_tools)
+            mcp_server_names = get_mcp_server_names()
+            servers_list = ", ".join(mcp_server_names)
+            instructions += (
+                f" You have MCP (Model Context Protocol) tools available from the following "
+                f"connected servers: {servers_list}. "
+                "When the user's request can be fulfilled by an MCP tool, ALWAYS prefer "
+                "using the MCP tool over web search or other built-in tools. "
+                "MCP tools provide direct, structured access to external services and "
+                "are more reliable than general web search for their specific domains. "
+                "After using an MCP tool, summarize the result clearly for the user."
+            )
+            logger.info("MCP tools added to agent: %d tool(s) from servers: %s", len(mcp_tools), servers_list)
 
     # Context providers (CTR-0043, PRP-0024)
     context_providers: list[Any] = [history_provider]
@@ -183,10 +196,71 @@ def create_agent_registry() -> AgentRegistry:
     if skills_provider:
         context_providers.append(skills_provider)
 
-    registry = AgentRegistry(
+    return tools, context_providers, instructions
+
+
+def create_agent_registry() -> AgentRegistry:
+    """Create the AgentRegistry with one Agent per configured model (CTR-0070)."""
+    tools, context_providers, instructions = _build_tools_and_instructions(
+        include_mcp=True,
+        include_rag=True,
+    )
+    return AgentRegistry(
         tools=tools,
         context_providers=context_providers,
         instructions=instructions,
     )
 
-    return registry
+
+def build_devui_agent() -> Agent | None:
+    """Build a single Agent for DevUI (PRP-0046).
+
+    DevUI runs in a daemon thread with its own asyncio event loop. To
+    avoid cross-loop invocation of MCP tools (whose async context is
+    entered by the main FastAPI lifespan) and the ChromaDB client
+    (SQLite is thread-bound), this function constructs a fresh Agent
+    that excludes MCP tools and ``rag_search`` when the respective
+    ``DEVUI_DISABLE_*`` flags are set (default ``true``).
+
+    Returns ``None`` when there are no configured models; the caller
+    should fall back to the default-model registry agent in that case.
+    """
+    if not settings.model_list:
+        return None
+
+    include_mcp = not settings.devui_disable_mcp
+    include_rag = not settings.devui_disable_rag
+
+    tools, context_providers, instructions = _build_tools_and_instructions(
+        include_mcp=include_mcp,
+        include_rag=include_rag,
+    )
+
+    model = settings.default_model
+    credential = AzureCliCredential()
+    client = OpenAIChatClient(
+        model=model,
+        credential=credential,
+        azure_endpoint=settings.azure_openai_endpoint or None,
+    )
+
+    model_options: dict[str, Any] = {}
+    effort = settings.get_reasoning_effort(model)
+    if effort:
+        model_options["reasoning"] = {"effort": effort, "summary": "detailed"}
+
+    agent = Agent(
+        name=f"OpenChatCi-DevUI-{model}",
+        instructions=instructions,
+        client=client,
+        tools=tools,
+        context_providers=context_providers,
+        default_options=model_options or None,
+    )
+    logger.info(
+        "DevUI agent built (model=%s, include_mcp=%s, include_rag=%s)",
+        model,
+        include_mcp,
+        include_rag,
+    )
+    return agent

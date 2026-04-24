@@ -7,10 +7,11 @@ and HTML serving endpoint for stored UI Resource files.
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from app.auth import verify_api_key
 from app.mcp_apps.manager import read_app_html
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class RpcRequest(BaseModel):
     params: dict[str, Any] = {}
 
 
-@router.post("/{server_name}/rpc")
+@router.post("/{server_name}/rpc", dependencies=[Depends(verify_api_key)])
 async def rpc_proxy(server_name: str, request: RpcRequest):
     """Proxy JSON-RPC requests from Views to MCP servers.
 

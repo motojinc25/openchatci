@@ -19,8 +19,8 @@ from fastapi.responses import StreamingResponse
 from openai import NotFoundError as OpenAINotFoundError
 
 from app.agui.agent_registry import AgentRegistry
+from app.auth import verify_api_key_strict
 from app.image_gen.tools import current_thread_id as _image_gen_thread_id
-from app.openai_api.auth import verify_api_key
 from app.openai_api.converter import maf_contents_to_openai_output, openai_input_to_maf_messages
 from app.openai_api.models import ResponsesRequest, ResponsesResponse, UsageInfo
 from app.openai_api.session import (
@@ -243,7 +243,7 @@ def register_openai_api(app: FastAPI, *, agent_registry: AgentRegistry) -> None:
     Uses the AgentRegistry for model-based routing (CTR-0070).
     """
 
-    @app.post("/v1/responses", tags=["OpenAI API"], dependencies=[Depends(verify_api_key)])
+    @app.post("/v1/responses", tags=["OpenAI API"], dependencies=[Depends(verify_api_key_strict)])
     async def create_response(request: ResponsesRequest):
         """OpenAI Responses API-compatible endpoint."""
         # Resolve session

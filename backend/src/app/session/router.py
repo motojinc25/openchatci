@@ -13,9 +13,10 @@ import shutil
 from typing import Any
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.auth import verify_api_key
 from app.core.config import settings
 from app.session.storage import (
     FOLDER_NAME_MAX_LENGTH,
@@ -92,7 +93,7 @@ class InitSessionRequest(BaseModel):
     title: str = ""
 
 
-@router.post("/{thread_id}/init")
+@router.post("/{thread_id}/init", dependencies=[Depends(verify_api_key)])
 async def init_session(thread_id: str, body: InitSessionRequest) -> dict[str, Any]:
     """Initialize an empty session file before agent processing starts.
 
@@ -165,7 +166,7 @@ async def list_folders() -> list[dict[str, Any]]:
     return folders
 
 
-@router.post("/folders")
+@router.post("/folders", dependencies=[Depends(verify_api_key)])
 async def create_folder(body: CreateFolderRequest) -> dict[str, Any]:
     """Create a new folder record."""
     name = body.name.strip()
@@ -185,7 +186,7 @@ async def create_folder(body: CreateFolderRequest) -> dict[str, Any]:
     return folder
 
 
-@router.delete("/folders/{folder_id}")
+@router.delete("/folders/{folder_id}", dependencies=[Depends(verify_api_key)])
 async def delete_folder(folder_id: str) -> dict[str, Any]:
     """Delete a folder and unassign all linked sessions."""
     folders = _read_folder_records()
@@ -305,7 +306,7 @@ async def get_session(thread_id: str) -> dict[str, Any]:
     return _read_session_or_404(thread_id)
 
 
-@router.patch("/{thread_id}/folder")
+@router.patch("/{thread_id}/folder", dependencies=[Depends(verify_api_key)])
 async def assign_session_folder(thread_id: str, body: AssignFolderRequest) -> dict[str, Any]:
     """Assign or unassign a session to a folder."""
     data = _read_session_or_404(thread_id)
@@ -400,7 +401,7 @@ def _to_maf_message_dict(msg: SaveMessageItem) -> dict[str, Any]:
     return result
 
 
-@router.post("/{thread_id}/messages")
+@router.post("/{thread_id}/messages", dependencies=[Depends(verify_api_key)])
 async def save_messages(thread_id: str, body: SaveMessagesRequest) -> dict[str, Any]:
     """Save new messages to a session file.
 
@@ -459,7 +460,7 @@ class TruncateRequest(BaseModel):
     delete_from: int
 
 
-@router.post("/{thread_id}/truncate")
+@router.post("/{thread_id}/truncate", dependencies=[Depends(verify_api_key)])
 async def truncate_session(thread_id: str, body: TruncateRequest) -> dict[str, Any]:
     """Truncate session messages from a given index onward.
 
@@ -480,7 +481,7 @@ async def truncate_session(thread_id: str, body: TruncateRequest) -> dict[str, A
     return {"status": "truncated", "thread_id": thread_id, "message_count": data.get("message_count", 0)}
 
 
-@router.delete("/{thread_id}/messages/{index}")
+@router.delete("/{thread_id}/messages/{index}", dependencies=[Depends(verify_api_key)])
 async def delete_message(thread_id: str, index: int) -> dict[str, Any]:
     """Delete a single message at the given index from a session."""
     data = _read_session_or_404(thread_id)
@@ -504,7 +505,7 @@ class ForkRequest(BaseModel):
     up_to_index: int
 
 
-@router.post("/{thread_id}/fork")
+@router.post("/{thread_id}/fork", dependencies=[Depends(verify_api_key)])
 async def fork_session(thread_id: str, body: ForkRequest) -> dict[str, Any]:
     """Fork a session up to a given message index.
 
@@ -555,7 +556,7 @@ class RenameRequest(BaseModel):
     title: str
 
 
-@router.patch("/{thread_id}/rename")
+@router.patch("/{thread_id}/rename", dependencies=[Depends(verify_api_key)])
 async def rename_session(thread_id: str, body: RenameRequest) -> dict[str, Any]:
     """Rename a session title."""
     data = _read_session_or_404(thread_id)
@@ -568,7 +569,7 @@ async def rename_session(thread_id: str, body: RenameRequest) -> dict[str, Any]:
     return {"status": "renamed", "thread_id": thread_id, "title": data["title"]}
 
 
-@router.post("/{thread_id}/archive")
+@router.post("/{thread_id}/archive", dependencies=[Depends(verify_api_key)])
 async def archive_session(thread_id: str) -> dict[str, str]:
     """Archive a session by moving it from .sessions/ to .archived/."""
     path = session_path(thread_id)
@@ -599,7 +600,7 @@ class ContinuationTokenRequest(BaseModel):
     continuation_token: dict[str, Any] | None = None
 
 
-@router.patch("/{thread_id}/continuation-token")
+@router.patch("/{thread_id}/continuation-token", dependencies=[Depends(verify_api_key)])
 async def update_continuation_token(thread_id: str, body: ContinuationTokenRequest) -> dict[str, Any]:
     """Update continuation_token for background response resumption (CTR-0045, PRP-0025)."""
     data = _read_session_or_404(thread_id)
@@ -618,7 +619,7 @@ class PinRequest(BaseModel):
     pinned: bool
 
 
-@router.patch("/{thread_id}/pin")
+@router.patch("/{thread_id}/pin", dependencies=[Depends(verify_api_key)])
 async def pin_session(thread_id: str, body: PinRequest) -> dict[str, Any]:
     """Pin or unpin a session."""
     data = _read_session_or_404(thread_id)
@@ -634,7 +635,7 @@ async def pin_session(thread_id: str, body: PinRequest) -> dict[str, Any]:
     return {"status": "pinned" if body.pinned else "unpinned", "thread_id": thread_id, "pinned_at": data["pinned_at"]}
 
 
-@router.delete("/{thread_id}")
+@router.delete("/{thread_id}", dependencies=[Depends(verify_api_key)])
 async def delete_session(thread_id: str) -> dict[str, str]:
     """Delete a session file and its uploaded files."""
     path = session_path(thread_id)

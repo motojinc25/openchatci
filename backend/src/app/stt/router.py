@@ -5,8 +5,9 @@ POST /api/transcribe accepts an audio file upload and returns transcribed text.
 
 import logging
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 
+from app.auth import verify_api_key
 from app.stt.provider import STTProvider
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ def set_stt_provider(provider: STTProvider) -> None:
     _provider = provider
 
 
-@router.post("/transcribe")
+@router.post("/transcribe", dependencies=[Depends(verify_api_key)])
 async def transcribe(file: UploadFile) -> dict[str, str]:
     if _provider is None:
         raise HTTPException(status_code=503, detail="STT provider not configured")

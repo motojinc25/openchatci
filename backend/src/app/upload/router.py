@@ -9,10 +9,11 @@ import logging
 import mimetypes
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from app.auth import verify_api_key
 from app.core.config import settings
 from app.upload.validation import UploadValidationError, validate_upload_metadata
 
@@ -31,7 +32,7 @@ class UploadResponse(BaseModel):
     filename: str
 
 
-@router.post("/api/upload/{thread_id}")
+@router.post("/api/upload/{thread_id}", dependencies=[Depends(verify_api_key)])
 async def upload_file(thread_id: str, file: UploadFile) -> UploadResponse:
     """Upload a supported file for a session."""
     data = await file.read()

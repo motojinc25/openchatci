@@ -91,6 +91,7 @@ Open: [http://localhost:8000/chat](http://localhost:8000/chat)
 - Context window consumption display with warning levels
 - Per-turn token usage display
 - OpenAI-compatible API: expose agent as `/v1/responses` endpoint for external apps via OpenAI SDK
+- Unified API authentication: single `API_KEY` Bearer token protects `/v1/responses` and every write REST endpoint for non-loopback (LAN) callers; same-machine clients always bypass
 - CLI Client: chat, session/template/model management, TTS, and upload from the command line with local preflight validation for filename, MIME type, and size
 - HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
 - Multilingual chat with browser auto-translation suppressed
@@ -346,7 +347,15 @@ Enable AI-powered file operations and shell execution:
 ```
 CODING_ENABLED=true
 CODING_WORKSPACE_DIR=C:\path\to\workspace
+# Optional: bound file_read output to protect memory + context window
+# CODING_FILE_READ_MAX_BYTES=1048576   # 1 MiB default
 ```
+
+`file_read` now stats the target before reading and caps the output at
+`CODING_FILE_READ_MAX_BYTES` (default 1 MiB). When the cap or the line
+limit is hit, the response ends with an explicit
+`[TRUNCATED BY BYTES: ...]` / `[TRUNCATED BY LIMIT: ...]` marker that
+tells the agent how to paginate with `offset=N`.
 
 ---
 
@@ -417,6 +426,10 @@ Create a `mcp_servers.json` file (see `backend/mcp_servers.sample.json`):
 - MCP tools appear alongside built-in tools (Weather, Coding, Image Generation)
 - Tool calls display with categorized icons: built-in tools have dedicated icons, Skills tools show **BookOpen**/**FileText**, MCP tools show **Plug**
 - Server lifecycle managed automatically (startup/shutdown with zombie process prevention)
+- **Optional per-server fields** (Claude Desktop-compatible, ignored elsewhere):
+  - `"load_prompts": true` -- set when your MCP server implements `prompts/list` (most community servers are tools-only; the default is `false` so filesystem, git, github, etc. connect cleanly out of the box)
+  - `"load_tools": false` -- skip the `tools/list` probe for a tools-only server's prompts-only mode
+  - `"request_timeout": 30` -- per-call timeout in seconds forwarded to MAF
 - Reuse your existing Claude Desktop / Claude Code / Cursor MCP configurations
 
 ---
@@ -453,6 +466,8 @@ RAG_TOP_K=5
 EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small
 RAG_CHUNK_SIZE=800
 RAG_CHUNK_OVERLAP=200
+# Optional: trailing-chunk merge threshold (unset -> RAG_CHUNK_SIZE // 4; 0 disables)
+# RAG_CHUNK_MIN_SIZE=200
 ```
 
 1. Click **+** button > **Attach PDF** to upload a document
@@ -463,7 +478,8 @@ RAG_CHUNK_OVERLAP=200
 
 - **ChromaDB PersistentClient**: file-based vector storage (`.chroma/` directory)
 - **Azure OpenAI Embedding**: `text-embedding-3-small` for consistent multilingual quality
-- **Overlap chunking**: configurable chunk size (800 chars) and overlap (200 chars)
+- **Singleton embedding client**: Azure CLI credential resolution and TLS handshake run once per batch server process, not once per 100-text batch
+- **Overlap chunking**: configurable chunk size (800 chars) and overlap (200 chars) with tail-merge that drops or folds sub-minimum trailing fragments so tiny chunks do not pollute top-k retrieval
 - **Metadata filtering**: source filename, page number, chunk index for precise citation
 - **Deduplication**: re-ingesting the same file overwrites existing chunks automatically
 - **PDF file cards**: PDFs display as file icon cards (not image thumbnails) in chat
@@ -487,7 +503,10 @@ Run long-running tasks (RAG ingestion, data pipelines) as background batch jobs 
     "batch": {
       "command": "uv",
       "args": ["run", "python", "-m", "app.mcp_batch.server"],
-      "env": { "BATCH_JOBS_DIR": ".jobs" }
+      "env": {
+        "BATCH_JOBS_DIR": ".jobs",
+        "BATCH_ENABLE_SAMPLE_JOBS": "false"
+      }
     }
   }
 }
@@ -496,7 +515,7 @@ Run long-running tasks (RAG ingestion, data pipelines) as background batch jobs 
 - **Conversation-based management**: submit, monitor, cancel, delete jobs via chat
 - **MCP Apps dashboard**: auto-refreshing progress bars, cancel/delete with confirmation dialogs
 - **File-based persistence**: each job stored as a JSON file (crash-resilient)
-- **Extensible job types**: sample sleep job + RAG Ingestion Pipeline (`rag-ingest`)
+- **Core job types**: RAG Ingestion Pipeline (`rag-ingest`). The Phase-1 `sleep` sample job is hidden by default; set `BATCH_ENABLE_SAMPLE_JOBS=true` in the batch server env to enable it for demos or tests.
 - **Cooperative cancellation**: jobs check cancel flag at each progress checkpoint
 
 ---
@@ -510,6 +529,33 @@ For long-running agent operations (e.g., o3/o4-mini reasoning models), enable Ba
 3. Continuation tokens are auto-saved to session for page reload resumption
 
 No environment variable needed -- toggle on/off per session via the UI.
+
+---
+
+### API Authentication
+
+`API_KEY` is the **unified Bearer token** that protects the external-app
+OpenAI API and every write REST endpoint when reached from a non-loopback
+(LAN) client. Same-machine clients (`127.0.0.1`, `::1`, `localhost`)
+bypass auth so localhost development stays zero-configuration even when
+`APP_HOST=0.0.0.0` for LAN exposure.
+
+```
+API_KEY=sk-openchatci-your-secret-key-here
+# APP_REQUIRE_AUTH_ON_LAN=true   # default: fail-closed on LAN without a key
+```
+
+Decision matrix for write endpoints (image edit, upload, MCP Apps RPC,
+sessions write, templates write, TTS, STT):
+
+| Client address | `APP_REQUIRE_AUTH_ON_LAN` | `API_KEY` | Outcome |
+|----------------|---------------------------|-----------|---------|
+| loopback       | any                       | any       | allow   |
+| LAN            | `false`                   | any       | allow (operator opt-out) |
+| LAN            | `true`                    | empty     | 503     |
+| LAN            | `true`                    | set       | Bearer required |
+
+`/v1/responses` (OpenAI API below) always requires a matching Bearer key regardless of client address because it is designed for external apps.
 
 ---
 
@@ -622,9 +668,19 @@ Enable Microsoft Agent Framework DevUI for debugging:
 ```
 DEVUI_ENABLED=true
 DEVUI_PORT=8080
+# DevUI runs in a daemon thread with its own asyncio event loop.
+# Loop-bound handles (MCP tool async contexts, ChromaDB / SQLite) are
+# excluded from the DevUI agent by default. Opt in with false.
+# DEVUI_DISABLE_MCP=true
+# DEVUI_DISABLE_RAG=true
 ```
 
 Access at [http://localhost:8080](http://localhost:8080)
+
+DevUI receives a dedicated Agent instance that reuses the main agent's
+function tools, skills, and model client but omits MCP tools and
+`rag_search` by default. This avoids cross-loop invocation between the
+DevUI daemon thread and the main FastAPI event loop.
 
 ---
 

@@ -6,9 +6,10 @@ Templates are stored as individual JSON files in TEMPLATES_DIR.
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from starlette.status import HTTP_201_CREATED
 
+from app.auth import verify_api_key
 from app.core.config import settings
 from app.prompt_templates.models import TemplateCreate, TemplateResponse, TemplateUpdate
 from app.prompt_templates.storage import TemplateStorage
@@ -24,7 +25,7 @@ async def list_templates() -> list[TemplateResponse]:
     return [TemplateResponse(**t) for t in _storage.list_all()]
 
 
-@router.post("", status_code=HTTP_201_CREATED)
+@router.post("", status_code=HTTP_201_CREATED, dependencies=[Depends(verify_api_key)])
 async def create_template(body: TemplateCreate) -> TemplateResponse:
     """Create a new template."""
     result = _storage.create(body.model_dump())
@@ -40,7 +41,7 @@ async def get_template(template_id: str) -> TemplateResponse:
     return TemplateResponse(**result)
 
 
-@router.put("/{template_id}")
+@router.put("/{template_id}", dependencies=[Depends(verify_api_key)])
 async def update_template(template_id: str, body: TemplateUpdate) -> TemplateResponse:
     """Update an existing template."""
     result = _storage.update(template_id, body.model_dump())
@@ -49,7 +50,7 @@ async def update_template(template_id: str, body: TemplateUpdate) -> TemplateRes
     return TemplateResponse(**result)
 
 
-@router.delete("/{template_id}", status_code=204)
+@router.delete("/{template_id}", status_code=204, dependencies=[Depends(verify_api_key)])
 async def delete_template(template_id: str) -> None:
     """Delete a template."""
     if not _storage.delete(template_id):

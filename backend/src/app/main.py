@@ -33,7 +33,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from openai import AzureOpenAI
 
-from app.agui.agent_factory import create_agent_registry
+from app.agui.agent_factory import build_devui_agent, create_agent_registry
 from app.agui.endpoint import register_agui_endpoints
 from app.core.config import settings
 from app.devui.launcher import launch_devui_if_enabled
@@ -152,8 +152,17 @@ register_agui_endpoints(app, agent_registry=agent_registry)
 # OpenAI-compatible Responses API (CTR-0057, PRP-0030)
 register_openai_api(app, agent_registry=agent_registry)
 
-# DevUI server (CTR-0025) -- uses default model agent
-launch_devui_if_enabled(agent_registry.get())
+# DevUI server (CTR-0025) -- PRP-0046: uses an isolated agent that
+# excludes MCP tools and rag_search by default so the daemon-thread
+# event loop does not share loop-bound handles with the main FastAPI
+# loop. Falls back to the registry's default agent only when both
+# DEVUI_DISABLE_MCP and DEVUI_DISABLE_RAG are set to false.
+if settings.devui_enabled:
+    if settings.devui_disable_mcp or settings.devui_disable_rag:
+        _devui_agent = build_devui_agent() or agent_registry.get()
+    else:
+        _devui_agent = agent_registry.get()
+    launch_devui_if_enabled(_devui_agent)
 
 
 # Model info endpoint (CTR-0041, CTR-0069, PRP-0035)

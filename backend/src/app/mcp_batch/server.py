@@ -51,10 +51,15 @@ async def submit_job(job_type: str, params: dict | None = None) -> str:
     """Submit a new batch job for async execution.
 
     Args:
-        job_type: Type of job to run. Available: sleep, rag-ingest.
+        job_type: Type of job to run. Core types: rag-ingest. Sample
+            types (e.g. sleep) are registered only when the operator
+            sets BATCH_ENABLE_SAMPLE_JOBS=true (PRP-0046).
         params: Job-specific parameters.
-            sleep: {"duration": 60}
-            rag-ingest: {"file_path": ".uploads/thread/file.pdf", "collection": "default", "chunk_size": 800, "chunk_overlap": 200}
+            rag-ingest: {"file_path": ".uploads/thread/file.pdf",
+                         "collection": "default",
+                         "chunk_size": 800, "chunk_overlap": 200,
+                         "chunk_min_size": 200}
+            sleep (sample): {"duration": 60}
 
     Returns:
         JSON with job id, type, and status.

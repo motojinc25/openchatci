@@ -6,10 +6,11 @@ POST /api/tts accepts text and returns synthesized audio (MP3).
 import logging
 
 from elevenlabs.core import ApiError
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from app.auth import verify_api_key
 from app.tts.provider import TTSProvider
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class TTSRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=MAX_TEXT_LENGTH)
 
 
-@router.post("/tts")
+@router.post("/tts", dependencies=[Depends(verify_api_key)])
 async def synthesize(request: TTSRequest):
     if _provider is None:
         raise HTTPException(status_code=503, detail="TTS provider not configured")

@@ -28,36 +28,87 @@ _MAX_GLOB_RESULTS = 200
 _MAX_GREP_RESULTS = 100
 
 
-def _file_read_sync(path: str, offset: int, limit: int) -> str:
-    """Synchronous file read implementation."""
+def _file_read_sync(path: str, offset: int, limit: int, max_bytes: int) -> str:
+    """Synchronous file read implementation with byte-bounded safety (PRP-0047).
+
+    Reads up to ``max_bytes`` from the file. If the file is larger, a
+    ``[TRUNCATED: ...]`` marker is appended so the agent can tell the
+    output was clipped and decide whether to paginate via ``offset``
+    or narrow the read target.
+    """
     workspace = settings.coding_workspace_dir
     try:
         safe_path = resolve_safe_path(workspace, path)
     except ValueError as e:
         return str(e)
 
-    if not Path(safe_path).is_file():
+    path_obj = Path(safe_path)
+    if not path_obj.is_file():
         return f"Error: File not found: {path}"
 
     try:
-        with Path(safe_path).open(encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
+        total_bytes = path_obj.stat().st_size
+    except OSError as e:
+        return f"Error reading file: {e}"
+
+    # Normalize max_bytes: 0 or negative -> fall back to the configured cap.
+    effective_max = max_bytes if max_bytes > 0 else settings.coding_file_read_max_bytes
+    size_truncated = total_bytes > effective_max
+
+    try:
+        if size_truncated:
+            with path_obj.open("rb") as fb:
+                raw = fb.read(effective_max)
+            text = raw.decode("utf-8", errors="replace")
+        else:
+            with path_obj.open(encoding="utf-8", errors="replace") as f:
+                text = f.read()
     except PermissionError:
         return f"Error: Permission denied: {path}"
     except OSError as e:
         return f"Error reading file: {e}"
 
+    # splitlines without keepends so the numbered render is clean.
+    lines = text.splitlines()
     total = len(lines)
+
+    if offset < 0:
+        offset = 0
     if offset >= total:
-        return f"Error: offset {offset} exceeds file length ({total} lines)"
+        return f"Error: offset {offset} exceeds file length ({total} lines" + (
+            f", file truncated at {effective_max} bytes of {total_bytes})" if size_truncated else ")"
+        )
 
-    selected = lines[offset : offset + limit]
-    numbered = []
-    for i, line in enumerate(selected, start=offset + 1):
-        numbered.append(f"{i:>6}\t{line.rstrip()}")
+    effective_limit = limit if limit > 0 else total
+    selected = lines[offset : offset + effective_limit]
+    line_truncated = offset + len(selected) < total
 
-    header = f"File: {path} ({total} lines total, showing lines {offset + 1}-{offset + len(selected)})"
-    return header + "\n" + "\n".join(numbered)
+    numbered = [f"{i:>6}\t{line}" for i, line in enumerate(selected, start=offset + 1)]
+
+    header_parts = [
+        f"File: {path}",
+        f"lines {offset + 1}-{offset + len(selected)} of {total}",
+    ]
+    if size_truncated:
+        header_parts.append(f"file truncated at {effective_max} of {total_bytes} bytes")
+    header = " | ".join(header_parts)
+
+    footer_parts: list[str] = []
+    if size_truncated:
+        footer_parts.append(
+            f"[TRUNCATED BY BYTES: read {effective_max} of {total_bytes} bytes; "
+            "re-invoke with a narrower path or a larger CODING_FILE_READ_MAX_BYTES]"
+        )
+    if line_truncated:
+        footer_parts.append(
+            f"[TRUNCATED BY LIMIT: shown {len(selected)} of {total} lines; "
+            f"continue with offset={offset + len(selected)}]"
+        )
+
+    body = "\n".join(numbered)
+    if footer_parts:
+        body = body + "\n" + "\n".join(footer_parts)
+    return header + "\n" + body
 
 
 def _file_write_sync(path: str, content: str) -> str:
@@ -204,9 +255,26 @@ async def file_read(
     path: Annotated[str, Field(description="Relative file path from the workspace directory")],
     offset: Annotated[int, Field(description="Line number to start reading from (0-based, default 0)")] = 0,
     limit: Annotated[int, Field(description="Maximum number of lines to read (default 2000)")] = 2000,
+    max_bytes: Annotated[
+        int,
+        Field(
+            description=(
+                "Maximum bytes to read from the file (default from CODING_FILE_READ_MAX_BYTES, "
+                "typically 1048576). Files larger than this are truncated; the response includes "
+                "a [TRUNCATED BY BYTES: ...] marker."
+            ),
+        ),
+    ] = 0,
 ) -> str:
-    """Read file content with line numbers. Use offset/limit for large files."""
-    return await asyncio.to_thread(_file_read_sync, path, offset, limit)
+    """Read file content with line numbers. Use offset/limit for large files.
+
+    Output includes explicit ``[TRUNCATED BY BYTES: ...]`` or
+    ``[TRUNCATED BY LIMIT: ...]`` markers when the file exceeds the byte
+    cap or the line limit (PRP-0047). Pass ``max_bytes=0`` to accept
+    the configured default; pass a positive value to tighten the read
+    for a specific call.
+    """
+    return await asyncio.to_thread(_file_read_sync, path, offset, limit, max_bytes)
 
 
 async def file_write(

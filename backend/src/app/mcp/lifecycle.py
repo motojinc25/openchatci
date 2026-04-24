@@ -99,28 +99,6 @@ def prepare_mcp() -> None:
     logger.info("MCP preparation complete: %d tool(s) ready for activation", len(_mcp_tools))
 
 
-def _patch_load_prompts(tool: object) -> None:
-    """Patch load_prompts to handle servers that don't support prompts.
-
-    Workaround for MAF SDK issue: MCPStdioTool.connect() unconditionally
-    calls load_prompts(), which fails with "Method not found" on MCP
-    servers that only support tools (e.g., filesystem, GitHub).
-    This patch wraps load_prompts to catch and log the error gracefully.
-    """
-    original = getattr(tool, "load_prompts", None)
-    if original is None:
-        return
-
-    async def _safe_load_prompts() -> None:
-        try:
-            await original()
-        except Exception:
-            name = getattr(tool, "name", "unknown")
-            logger.debug("MCP server '%s' does not support prompts (skipping)", name)
-
-    tool.load_prompts = _safe_load_prompts  # type: ignore[attr-defined]
-
-
 async def activate_mcp() -> None:
     """Async phase: enter async context managers to start MCP servers.
 
@@ -138,7 +116,10 @@ async def activate_mcp() -> None:
     started_count = 0
 
     for i, tool in enumerate(_mcp_tools):
-        _patch_load_prompts(tool)
+        # PRP-0046: the former _patch_load_prompts workaround was removed.
+        # Operators declare "load_prompts": false in mcp_servers.json for
+        # servers that implement only tools (e.g. filesystem, GitHub),
+        # and MAF's native flag skips the prompts/list probe entirely.
         try:
             await _mcp_exit_stack.enter_async_context(tool)
             started_count += 1

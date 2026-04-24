@@ -9,8 +9,9 @@ indicate areas to regenerate.
 import asyncio
 import logging
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
+from app.auth import verify_api_key
 from app.core.config import settings
 from app.image_gen.tools import _get_client, _save_image
 
@@ -63,7 +64,7 @@ def _edit_with_mask_sync(
     }
 
 
-@router.post("/edit")
+@router.post("/edit", dependencies=[Depends(verify_api_key)])
 async def edit_image_with_mask(
     image: UploadFile = File(...),
     prompt: str = Form(...),

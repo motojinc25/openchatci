@@ -1,6 +1,6 @@
 [project]
 name = "openchatci"
-version = "0.45.1"
+version = "0.48.0"
 description = "The localhost AI Agent Runtime -- Chat UI, Tools, RAG, and MCP in one pip install."
 readme = "README.md"
 license = "Apache-2.0"

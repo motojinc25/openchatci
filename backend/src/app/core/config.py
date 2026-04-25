@@ -100,6 +100,21 @@ class Settings(BaseSettings):
     api_key: str = ""
     app_require_auth_on_lan: bool = True
 
+    # Auth Provider Selection (CTR-0084, PRP-0048)
+    # Empty ("") -> auto-select: "api_key" when API_KEY is set, otherwise "null".
+    # "null"     -> OSS default, no authentication; tenant_id = "default".
+    # "api_key"  -> static Bearer API_KEY (preserves CTR-0083 semantics).
+    # "msal"     -> commercial only (wedxchatci.MsalAuthProvider, CTR-0086);
+    #               registered at startup by the enterprise build.
+    auth_provider: str = ""
+
+    # Tenant Extraction Strategy (CTR-0085, PRP-0048)
+    # "none"      -> OSS default, single-tenant; tenant_id = "default".
+    # "jwt_claim" -> read TENANT_JWT_CLAIM (default "tid") from Identity.raw.
+    # "subdomain" -> reserved name, not implemented yet (Phase 2+).
+    # "api_key"   -> reserved name, not implemented yet (Phase 2+).
+    tenant_extractor: str = "none"
+
     # DevUI (CTR-0024, PRP-0016, PRP-0046)
     devui_enabled: bool = False
     devui_port: int = 8080

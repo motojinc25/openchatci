@@ -91,7 +91,7 @@ Open: [http://localhost:8000/chat](http://localhost:8000/chat)
 - Context window consumption display with warning levels
 - Per-turn token usage display
 - OpenAI-compatible API: expose agent as `/v1/responses` endpoint for external apps via OpenAI SDK
-- Unified API authentication: single `API_KEY` Bearer token protects `/v1/responses` and every write REST endpoint for non-loopback (LAN) callers; same-machine clients always bypass
+- Unified API authentication: single `API_KEY` Bearer token protects `/v1/responses`, every write REST endpoint, and the AG-UI chat stream for non-loopback (LAN) callers; same-machine clients always bypass
 - CLI Client: chat, session/template/model management, TTS, and upload from the command line with local preflight validation for filename, MIME type, and size
 - HTTPS/TLS support for LAN access with Secure Context (mkcert recommended)
 - Multilingual chat with browser auto-translation suppressed
@@ -535,10 +535,10 @@ No environment variable needed -- toggle on/off per session via the UI.
 ### API Authentication
 
 `API_KEY` is the **unified Bearer token** that protects the external-app
-OpenAI API and every write REST endpoint when reached from a non-loopback
-(LAN) client. Same-machine clients (`127.0.0.1`, `::1`, `localhost`)
-bypass auth so localhost development stays zero-configuration even when
-`APP_HOST=0.0.0.0` for LAN exposure.
+OpenAI API, every write REST endpoint, and the AG-UI chat stream when
+reached from a non-loopback (LAN) client. Same-machine clients
+(`127.0.0.1`, `::1`, `localhost`) bypass auth so localhost development
+stays zero-configuration even when `APP_HOST=0.0.0.0` for LAN exposure.
 
 ```
 API_KEY=sk-openchatci-your-secret-key-here
@@ -546,7 +546,8 @@ API_KEY=sk-openchatci-your-secret-key-here
 ```
 
 Decision matrix for write endpoints (image edit, upload, MCP Apps RPC,
-sessions write, templates write, TTS, STT):
+sessions write, templates write, TTS, STT) **and the AG-UI chat stream
+(`POST /ag-ui/`)**:
 
 | Client address | `APP_REQUIRE_AUTH_ON_LAN` | `API_KEY` | Outcome |
 |----------------|---------------------------|-----------|---------|
@@ -556,6 +557,30 @@ sessions write, templates write, TTS, STT):
 | LAN            | `true`                    | set       | Bearer required |
 
 `/v1/responses` (OpenAI API below) always requires a matching Bearer key regardless of client address because it is designed for external apps.
+
+**Upgrading from a release before v0.47.0** with `APP_HOST` non-loopback
+and `API_KEY` unset: AG-UI now returns the same 503 / 401 as every other
+write endpoint. Add `API_KEY=...` to `.env`, or accept LAN exposure
+explicitly with `APP_REQUIRE_AUTH_ON_LAN=false`.
+
+#### Advanced: Auth Provider Selection
+
+The auth dependency delegates to a pluggable provider. The defaults
+preserve the behavior described above; you can opt out of authentication
+entirely with `AUTH_PROVIDER=null` (every request resolves to an
+anonymous identity, `/v1/responses` returns 503).
+
+```
+# Empty (default)  -> ApiKeyAuthProvider (CTR-0083 behavior)
+# null             -> NullAuthProvider (opt-out, anonymous Identity)
+# api_key          -> explicit ApiKeyAuthProvider
+# AUTH_PROVIDER=
+```
+
+A second knob, `TENANT_EXTRACTOR`, declares how a multi-tenant tenant id
+is derived from each request. OSS deployments stay single-tenant
+(`tenant_extractor=none`, `tenant_id="default"`); reserved names
+`subdomain` and `api_key` are placeholders for future variants.
 
 ---
 

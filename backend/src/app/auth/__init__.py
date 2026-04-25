@@ -1,139 +1,86 @@
-"""API Authentication Dependency (CTR-0083, PRP-0045).
+"""API Authentication Dependency (CTR-0083, PRP-0045, PRP-0048).
 
-Shared FastAPI dependencies that enforce Bearer API_KEY authentication.
+Public FastAPI dependencies used by every authenticated REST endpoint.
+Since PRP-0048 these are thin wrappers that delegate to the registered
+``AuthProvider`` (CTR-0084). OSS ships ``NullAuthProvider`` (default)
+and ``ApiKeyAuthProvider`` (auto-selected when ``API_KEY`` is set).
+Commercial builds register ``MsalAuthProvider`` (CTR-0086) via
+``register_auth_provider`` before routes handle their first request.
 
-Two dependencies are exposed:
+Two dependencies are exposed to keep the call-site surface stable:
 
-- ``verify_api_key`` (default for write endpoints used by the SPA)
-    Bypassed when the request's **client address** is a loopback
-    address (``127.0.0.1``, ``::1``, or the starlette TestClient
-    sentinel). This covers the ``APP_HOST=0.0.0.0`` / LAN-exposure
-    scenario correctly: same-machine browsers reach the server over
-    the loopback interface and remain zero-configuration, while LAN
-    peers (e.g. ``192.168.x.x``) are authenticated.
+- ``verify_api_key`` — for write endpoints consumed by the SPA.
+  Delegates to ``provider.require``.
+- ``verify_api_key_strict`` — for external-app endpoints such as
+  ``/v1/responses`` (CTR-0057). Delegates to ``provider.require_strict``.
 
-- ``verify_api_key_strict`` (for external-app entry points)
-    Always requires ``API_KEY`` and a matching Bearer header regardless
-    of client address. Used by the OpenAI-compatible Responses API
-    (``/v1/responses``) where the key is the caller's identity even
-    when the external app runs on the same host as the server.
-
-Behavior matrix for ``verify_api_key``:
-
-- Client on loopback (127.0.0.1, ::1, test harness)
-    Auth is skipped regardless of API_KEY.
-- Client on non-loopback, APP_REQUIRE_AUTH_ON_LAN=True (default)
-    API_KEY must be set and the request must present a matching
-    ``Authorization: Bearer {API_KEY}`` header. Missing config -> 503.
-    Missing/mismatched header -> 401.
-- Client on non-loopback, APP_REQUIRE_AUTH_ON_LAN=False
-    Auth is skipped. A startup-time warning is logged so the operator
-    is explicit about the insecure mode.
-
-The server-side startup validator still inspects
-``settings.is_loopback_bind`` so operators who bind to a non-loopback
-address without ``API_KEY`` get a clear warning at boot, but the
-runtime auth decision is made per-request against the actual client.
-
-Behavior for ``verify_api_key_strict`` is identical to the non-loopback
-path of ``verify_api_key``, applied to every request regardless of
-client address.
+Behavior of the shipped providers is summarized on the provider
+classes. The ``Identity`` returned by the dependency is discarded by
+callers that only care about the pass/fail decision; forward-looking
+code (Phase 2 storage Protocols) can type the dependency as
+``Annotated[Identity, Depends(verify_api_key)]``.
 """
 
 from __future__ import annotations
 
-import ipaddress
-import logging
+# NOTE: ``Request`` is kept as a runtime import (not under TYPE_CHECKING)
+# because FastAPI's dependency-injection machinery resolves the annotation
+# on ``verify_api_key`` / ``verify_api_key_strict`` at route-registration
+# time via ``get_type_hints``. Moving it under TYPE_CHECKING makes FastAPI
+# fall back to treating ``request`` as a body parameter, which causes a
+# 422 on every authenticated write endpoint.
+from fastapi import Request  # noqa: TC002
 
-from fastapi import HTTPException, Request
-
-from app.core.config import settings
-
-logger = logging.getLogger(__name__)
-
-_MISSING_API_KEY_DETAIL = (
-    "Client is on a non-loopback address but API_KEY is not configured. "
-    "Set API_KEY in .env, or set APP_REQUIRE_AUTH_ON_LAN=false to acknowledge "
-    "unauthenticated LAN exposure."
+from app.auth.provider import (
+    ApiKeyAuthProvider,
+    AuthProvider,
+    Identity,
+    NullAuthProvider,
+    get_auth_provider,
+    register_auth_provider,
+    reset_auth_provider,
 )
-_MISSING_API_KEY_STRICT_DETAIL = "API is not configured. Set API_KEY in .env to enable external-app access."
-_MISSING_HEADER_DETAIL = "Missing or invalid Authorization header. Expected: Bearer <token>"
-_INVALID_KEY_DETAIL = "Invalid API key."
-
-# Starlette TestClient uses "testclient" as the client host in its ASGI
-# scope. Treat it as loopback so in-process tests do not need to inject
-# Bearer headers.
-_LOOPBACK_HOSTNAMES = frozenset({"localhost", "testclient"})
 
 
-def _is_client_loopback(client_host: str | None) -> bool:
-    """Return True when the request's client address is a loopback peer.
+async def verify_api_key(request: Request) -> Identity:
+    """FastAPI dependency: validate the caller on write endpoints.
 
-    Accepts IPv4/IPv6 loopback literals, the reserved ``localhost``
-    hostname, and the starlette TestClient sentinel. Any other value
-    (including ``None`` / unknown) is treated as non-loopback so the
-    dependency fails closed by default.
+    Delegates to the active provider's ``require`` method. Behavior for
+    the OSS providers:
+
+    - Null provider: always passes with the anonymous identity.
+    - API key provider: loopback bypass; non-loopback requires
+      ``Authorization: Bearer ${API_KEY}`` when
+      ``APP_REQUIRE_AUTH_ON_LAN`` is true.
+    - Missing ``API_KEY`` on non-loopback with auth required -> 503.
+    - Missing / mismatched header on non-loopback -> 401.
     """
-    if not client_host:
-        return False
-    host = client_host.strip().lower()
-    if host in _LOOPBACK_HOSTNAMES:
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+    return await get_auth_provider().require(request)
 
 
-def _check_bearer_header(request: Request) -> None:
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail=_MISSING_HEADER_DETAIL)
-    token = auth_header[len("Bearer ") :]
-    if token != settings.api_key:
-        raise HTTPException(status_code=401, detail=_INVALID_KEY_DETAIL)
+async def verify_api_key_strict(request: Request) -> Identity:
+    """FastAPI dependency: always-on variant for external-app paths.
 
+    Used by the OpenAI-compatible Responses API (``/v1/responses``,
+    CTR-0057) where the Bearer token is the caller's identity.
 
-async def verify_api_key(request: Request) -> None:
-    """FastAPI dependency: validate Bearer API key on write endpoints.
-
-    Bypassed when the request's client address is loopback (same-machine
-    peer) so ``APP_HOST=0.0.0.0`` + local SPA / curl keeps working with
-    zero configuration. LAN peers are authenticated via ``API_KEY``.
-
-    Raises:
-        HTTPException 503: Non-loopback client with auth required but
-            no API_KEY configured.
-        HTTPException 401: Missing or mismatched ``Authorization``
-            header on a non-loopback client with auth required.
+    - Null provider: 503 (strict enforcement is not available under
+      an unauthenticated configuration).
+    - API key provider: always requires ``Authorization: Bearer
+      ${API_KEY}`` regardless of client address.
+    - MSAL / other strict providers: identical to ``require``.
     """
-    client_host = request.client.host if request.client else None
-    if _is_client_loopback(client_host):
-        return
-
-    if not settings.app_require_auth_on_lan:
-        return
-
-    if not settings.api_key:
-        raise HTTPException(status_code=503, detail=_MISSING_API_KEY_DETAIL)
-
-    _check_bearer_header(request)
+    return await get_auth_provider().require_strict(request)
 
 
-async def verify_api_key_strict(request: Request) -> None:
-    """FastAPI dependency: always validate Bearer API key (external-app paths).
-
-    Used by external-app-facing endpoints (e.g. ``/v1/responses``) where
-    the Bearer token is the caller's identity and the endpoint must
-    authenticate even on a loopback bind.
-
-    Raises:
-        HTTPException 503: ``API_KEY`` is not configured.
-        HTTPException 401: Missing or mismatched ``Authorization`` header.
-    """
-    if not settings.api_key:
-        raise HTTPException(status_code=503, detail=_MISSING_API_KEY_STRICT_DETAIL)
-    _check_bearer_header(request)
-
-
-__all__ = ["verify_api_key", "verify_api_key_strict"]
+__all__ = [
+    "ApiKeyAuthProvider",
+    "AuthProvider",
+    "Identity",
+    "NullAuthProvider",
+    "get_auth_provider",
+    "register_auth_provider",
+    "reset_auth_provider",
+    "verify_api_key",
+    "verify_api_key_strict",
+]

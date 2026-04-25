@@ -38,12 +38,13 @@ from agent_framework import AgentSession, Content
 from agent_framework.exceptions import ChatClientException
 from agent_framework_ag_ui._agent_run import _normalize_response_stream
 from agent_framework_ag_ui._message_adapters import normalize_agui_input_messages
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import StreamingResponse
 from openai import NotFoundError as OpenAINotFoundError
 from pydantic import AliasChoices, BaseModel, Field
 
 from app.agui.agent_registry import AgentRegistry
+from app.auth import verify_api_key
 from app.core.config import settings
 from app.image_gen.tools import current_thread_id as _image_gen_thread_id
 
@@ -491,7 +492,7 @@ def register_agui_endpoints(app: FastAPI, *, agent_registry: AgentRegistry) -> N
     AgentRegistry is created by agent_factory (CTR-0070).
     """
 
-    @app.post("/ag-ui/", tags=["AG-UI"])
+    @app.post("/ag-ui/", tags=["AG-UI"], dependencies=[Depends(verify_api_key)])
     async def agui_endpoint(request_body: AGUIRequest):
         return StreamingResponse(
             _stream_with_reasoning(agent_registry, request_body),
@@ -503,4 +504,4 @@ def register_agui_endpoints(app: FastAPI, *, agent_registry: AgentRegistry) -> N
             },
         )
 
-    logger.info("AG-UI endpoint registered at /ag-ui/ (reasoning + session management enabled)")
+    logger.info("AG-UI endpoint registered at /ag-ui/ (reasoning + session management + CTR-0083 auth enabled)")
